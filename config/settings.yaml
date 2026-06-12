@@ -1,0 +1,35 @@
+kalshi:
+  demo_base_url: "https://demo-api.kalshi.co/trade-api/v2"
+  prod_base_url: "https://api.kalshi.com/trade-api/v2"
+  ws_url: "wss://api.kalshi.com/trade-api/ws/v2"
+  poll_interval_sec: 5          # combo/leg order book polling cadence
+  rfq_fallback: false           # set true if combo books prove API-invisible
+
+game_feed:
+  provider: "nba_api"           # nba_api | espn
+  poll_interval_sec: 3
+
+model:
+  # Stern diffusion: score differential ~ BM(mu, sigma) per minute
+  sigma_per_min: 1.7            # ~11.8 pts over 48 min; recalibrate from data
+  spread_to_mu: true            # mu = -pregame_spread / 48 (home-line convention)
+  mc_paths: 20000
+  copula_default_rho: 0.35      # placeholder until state-conditional estimates exist
+
+decision:
+  dp_time_step_sec: 30          # DP grid: one decision node per 30 game-seconds
+  dp_diff_range: 45             # score diff grid: -45 .. +45
+  risk_aversion: 0.0            # 0 = risk-neutral; >0 = exponential utility
+  robust_ensemble_size: 5      # bootstrap members; HOLD requires unanimity
+  shrinkage_unproven_weight: 0.7  # weight on MARKET prob until edge is proven
+
+bid_model:
+  # M(t) = F_mm * (1 - h),  h = a + b * (1-p) * exp(-c * tau_frac)
+  # Placeholder params -- MUST be refit from logged real bids (scripts/log_bids.py)
+  a: 0.03
+  b: 0.25
+  c: 3.0
+
+paths:
+  bid_log_dir: "data/logs/bids"
+  game_log_dir: "data/logs/games"
