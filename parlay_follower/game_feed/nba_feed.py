@@ -33,6 +33,17 @@ def _parse_clock(iso_clock: str) -> float:
         return 0.0
 
 
+def _parse_minutes(iso_min: str) -> float:
+    """NBA live API minutes format 'PT28M30.00S' -> decimal minutes (28.5)."""
+    try:
+        body = iso_min.removeprefix("PT")
+        mins, rest = body.split("M")
+        secs = rest.rstrip("S")
+        return int(mins) + float(secs) / 60.0
+    except Exception:
+        return 0.0
+
+
 def snapshot(game_id: str) -> GameState:
     """One-shot pull of the current game state."""
     if not HAS_NBA_API:
@@ -51,16 +62,22 @@ def snapshot(game_id: str) -> GameState:
         home_score=int(box["homeTeam"]["score"]),
         away_score=int(box["awayTeam"]["score"]),
         final=(status == 3),
+        home_team_id=int(box["homeTeam"].get("teamId", 0)),
+        away_team_id=int(box["awayTeam"].get("teamId", 0)),
     )
-    for side in ("homeTeam", "awayTeam"):
+    for side, label in (("homeTeam", "home"), ("awayTeam", "away")):
         for pl in box[side].get("players", []):
             st = pl.get("statistics", {})
-            gs.player_stats[pl.get("name", "")] = {
+            name = pl.get("name", "")
+            if not name:
+                continue
+            gs.player_stats[name] = {
                 "pts": float(st.get("points", 0)),
                 "reb": float(st.get("reboundsTotal", 0)),
                 "ast": float(st.get("assists", 0)),
-                "min": 0.0,
+                "min": _parse_minutes(st.get("minutesCalculated", "PT00M00.00S")),
                 "fouls": float(st.get("foulsPersonal", 0)),
+                "team": label,
             }
     return gs
 

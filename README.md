@@ -2,17 +2,13 @@
 
 Optimal cash-out timing for Kalshi NBA combos via **exact dynamic programming**.
 
-Given a multi-leg NBA position ("combo") on Kalshi, this system follows the game
-live, re-prices the position every few seconds, and tells you the optimal moment
-to sell — solving the same optimal stopping problem as American option exercise,
-exactly, by Bellman backward induction. Full design rationale lives in
+Given a multi-leg NBA position ("combo") on Kalshi, this system follows the game live, re-prices the position every few seconds, and tells you the optimal moment to sell — solving the same optimal stopping problem as American option exercise, exactly, by Bellman backward induction. Full design rationale lives in
 `docs/Live_Parlay_Follower_Project_Spec_v2.docx`.
 
 **Alert-only by default.** The system advises; the human executes. It never
 places orders.
 
 ## Project layout
-
 ```
 live-parlay-follower/
 ├── README.md
@@ -29,12 +25,13 @@ live-parlay-follower/
 │   └── log_bids.py               # standalone bid logger for games you don't hold
 ├── src/parlay_follower/
 │   ├── config.py                 # settings.yaml + .env loader
-│   ├── cli.py                    # `lpf` entry point
+│   ├── cli.py                    # lpf entry point
 │   ├── account/
 │   │   ├── auth.py               # RSA-PSS request signing (3 headers, ms timestamps)
 │   │   └── kalshi_client.py      # positions, fills, order books, multivariate, RFQ
 │   ├── market_data/
 │   │   ├── orderbook.py          # depth-weighted executable proceeds (not top-of-book)
+│   │   ├── exit_quote.py         # UNIFIED exit pricing: order-book vs RFQ vs illiquid
 │   │   └── bid_logger.py         # persistent bid+state logging -> haircut calibration
 │   ├── game_feed/
 │   │   ├── game_state.py         # state vector, Leg, deterministic resolvers
@@ -44,12 +41,14 @@ live-parlay-follower/
 │   │   ├── calibration.py        # isotonic recalibration, Brier, reliability curves
 │   │   ├── copula.py             # Gaussian copula, state-conditional correlation
 │   │   ├── monte_carlo.py        # combo fair value + full payoff distribution
+│   │   ├── nleg_paths.py         # general n-leg joint sim -> LSMC boundary
 │   │   └── shrinkage.py          # shrink-to-market + EdgeLedger (paper-trading gate)
 │   ├── decision/
 │   │   ├── bid_model.py          # empirical haircut h(tau, p, k); fit from logs
 │   │   ├── threshold_policy.py   # tuned baseline the DP must beat
-│   │   ├── exact_dp.py           # Bellman backward sweep -> precomputed boundary
-│   │   ├── lsmc.py               # Longstaff–Schwartz branch for player-prop legs
+│   │   ├── exact_dp.py           # Bellman backward sweep (single game-outcome leg)
+│   │   ├── lsmc.py               # Longstaff–Schwartz primitives
+│   │   ├── engine.py             # DISPATCHER: exact DP for 1 leg, LSMC for n legs
 │   │   ├── robust.py             # ensemble DP: HOLD requires unanimity
 │   │   └── signal.py             # HOLD/SELL signal + explanation
 │   ├── backtest/
@@ -122,6 +121,37 @@ lpf follow --ticker KXNBACOMBO-... --game-id 0042500404 --spread -4.5 \
     --leg "moneyline:side=home@KXNBA-...-ML" \
     --leg "total_over:line=224.5@KXNBA-...-TOTAL"
 ```
+
+## Liquidity reality (read this before trusting an exit)
+
+Kalshi has two different exit mechanisms, and they are not equally reliable:
+
+- **Single-leg markets** trade on a **visible order book**. The exit bid is
+  pollable any time and almost always present. *Most reliable mode.*
+- **Combos (multi-leg)** are priced by **RFQ** — there is no resting bid to
+  poll. You request a quote and market makers may or may not respond. "No one
+  willing to trade" is an empty RFQ. Liquidity thins hard beyond 3–4 legs.
+
+Practical guidance baked into the tool: **stick to single legs or 2–3 leg
+combos.** `exit_quote.py` handles all three cases (book / RFQ / illiquid) and
+never pretends a price exists. Always run a preflight first:
+
+```bash
+lpf check-liquidity --ticker KXNBACOMBO-...
+```
+
+The live follower also runs this automatically at startup and surfaces "no exit
+liquidity right now" as a HOLD reason rather than crashing or inventing a price.
+
+## n legs
+
+The system is leg-count-agnostic. `decision/engine.py` dispatches:
+- **one game-outcome leg** (moneyline/total) → exact DP (provably optimal),
+- **anything else** (2+ legs, or a single prop) → LSMC on simulated joint paths
+  (`probability/nleg_paths.py`), which handles any number/mix of legs.
+
+Callers get an identical `Recommendation` either way, so adding legs changes
+nothing downstream.
 
 ## Tests
 

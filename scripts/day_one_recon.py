@@ -20,7 +20,7 @@ import json
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from parlay_follower.account.auth import KalshiSigner          # noqa: E402
 from parlay_follower.account.kalshi_client import KalshiClient  # noqa: E402

@@ -21,7 +21,10 @@ class GameState:
     home_possession: bool | None = None
     final: bool = False
     player_stats: dict[str, dict[str, float]] = field(default_factory=dict)
-    # player_stats["LeBron James"] = {"pts": 22, "reb": 6, "ast": 7, "min": 28, "fouls": 3}
+    # player_stats["LeBron James"] = {"pts": 22, "reb": 6, "ast": 7, "min": 28.5,
+    #                                  "fouls": 3, "team": "home"}
+    home_team_id: int = 0   # nba_api teamId (0 = unknown)
+    away_team_id: int = 0
 
     @property
     def score_diff(self) -> int:

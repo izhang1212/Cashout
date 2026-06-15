@@ -44,16 +44,28 @@ def leg_live_prob(leg: Leg, gs: GameState, stern: SternModel,
         return stern.win_prob(gs.score_diff, gs.tau_minutes, side=leg.params.get("side", "home"))
 
     if leg.kind in ("total_over", "total_under"):
-        # v1 approximation: terminal TOTAL modeled as Normal around current pace.
-        # The diffusion governs the margin, not the total; replace with the
-        # LightGBM totals model in production.
-        elapsed_min = max(48.0 - gs.tau_minutes, 1e-6)
-        pace = (gs.home_score + gs.away_score) / elapsed_min
-        mean_total = gs.home_score + gs.away_score + pace * gs.tau_minutes
-        std_total = 1.6 * stern.sigma * np.sqrt(max(gs.tau_minutes, 1e-9))
+        # Pace-aware totals: blend current-game pace with league-average anchor,
+        # then apply Q4 adjustments for game situation.
         from scipy.stats import norm
+        elapsed_min = max(48.0 - gs.tau_minutes, 1e-6)
+        current_total = gs.home_score + gs.away_score
+        game_pace = current_total / elapsed_min
+        # League-average combined pace fallback (~4.58 pts/min = 220 pts/48 min)
+        season_pace = 220.0 / 48.0
+        # Bayesian blend: weight game pace by elapsed time, prior by 12 minutes
+        blend = min(elapsed_min / (elapsed_min + 12.0), 0.80)
+        blended_pace = blend * game_pace + (1.0 - blend) * season_pace
+        # Q4 game-situation adjustments
+        abs_diff = abs(gs.score_diff)
+        if gs.tau_minutes <= 12.0 and abs_diff <= 8:
+            blended_pace *= 0.92   # close game: clock management slows pace
+        elif gs.tau_minutes <= 6.0 and abs_diff >= 10:
+            blended_pace *= 1.05   # blowout: intentional fouling speeds pace
+        mean_total = current_total + blended_pace * gs.tau_minutes
+        std_total = 1.6 * stern.sigma * np.sqrt(max(gs.tau_minutes, 1e-9))
         p_over = 1.0 - norm.cdf(leg.params["line"], loc=mean_total, scale=std_total)
-        return float(p_over if leg.kind == "total_over" else 1.0 - p_over)
+        return float(np.clip(p_over if leg.kind == "total_over" else 1.0 - p_over,
+                             0.01, 0.99))
 
     if prop_probs and leg.leg_id in prop_probs:
         return prop_probs[leg.leg_id]

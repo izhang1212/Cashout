@@ -10,7 +10,17 @@ from __future__ import annotations
 
 import argparse
 import glob
+from re import sub
 import sys
+from .backtest import policies as pol
+from .backtest.metrics import summarize
+from .backtest.replay import monte_carlo_study, run_policy, synthetic_game_ticks
+from .config import load_settings
+from .decision.bid_model import BidModel
+from .decision.exact_dp import boundary_heatmap, solve
+from .decision.threshold_policy import grid_search
+from .probability.stern import SternModel
+import numpy as np
 
 
 def cmd_recon(_args):
@@ -32,15 +42,6 @@ def cmd_positions(_args):
 
 
 def cmd_backtest(args):
-    import numpy as np
-
-    from .backtest import policies as pol
-    from .backtest.metrics import summarize
-    from .backtest.replay import monte_carlo_study
-    from .config import load_settings
-    from .decision.bid_model import BidModel
-    from .decision.exact_dp import boundary_heatmap, solve
-    from .probability.stern import SternModel
 
     settings = load_settings()
     m, d = settings["model"], settings["decision"]
@@ -55,8 +56,34 @@ def cmd_backtest(args):
     boundary_heatmap(dp, "exercise_boundary.png")
     print("Saved exercise_boundary.png")
 
+    # Tune the threshold baseline on a held-out batch of synthetic games, so the
+    # comparison includes the floor the DP must beat (not just naive rules).
+    tune_rng = np.random.default_rng(123)
+    tune_games = [synthetic_game_ticks(stern, bid_model, q_other_fn=q_other,
+                                       k_live=args.k_live, entry_price=args.entry,
+                                       rng=tune_rng)
+                  for _ in range(min(args.n_games, 800))]
+
+    def _thresh_policy(policy):
+        return lambda tick: policy.should_sell(
+            tick["executable_bid"], tick["fair_value"], tick["tau_min"])
+
+    def _replay(policy):
+        pnls = [run_policy(ticks, won, args.entry, _thresh_policy(policy))
+                for ticks, won in tune_games]
+        arr = np.array(pnls)
+        s = arr.std()
+        return arr.mean() / s if s > 0 else arr.mean()
+
+    best_thresh, _ = grid_search(_replay)
+    print(f"Tuned threshold baseline: alpha={best_thresh.alpha:.2f} "
+          f"beta={best_thresh.beta_minutes:.0f}m")
+
     comparison = {
+        "threshold_baseline": (lambda tick, p=best_thresh: p.should_sell(
+            tick["executable_bid"], tick["fair_value"], tick["tau_min"])),
         "hold_to_resolution": pol.hold_to_resolution,
+        "sell_on_first_leg_complete": pol.sell_on_first_leg_complete,
         "sell_at_halftime": pol.sell_at_halftime,
         "sell_at_2x": pol.sell_at_profit_multiple(2.0),
     }
@@ -72,8 +99,7 @@ def cmd_backtest(args):
               f"{100*s['bust_rate']:6.1f}% {100*s['win_rate']:6.1f}%")
     print("\nNOTE: synthetic games test the policy UNDER THE MODEL. "
           "The paper-trading gate tests the model against reality.")
-
-
+    
 def cmd_fit_bid_model(args):
     import numpy as np
     import pandas as pd
@@ -100,8 +126,25 @@ def cmd_fit_bid_model(args):
     print("Update config/settings.yaml [bid_model] with these values.")
     if bm.residual_std > 0.05:
         print("residual_std is large -> consider adding the current bid as a DP state variable.")
+def cmd_check_liquidity(args):
+    from .account.auth import KalshiSigner
+    from .account.kalshi_client import KalshiClient
+    from .config import base_url, load_creds, load_settings
+    from .market_data.exit_quote import liquidity_preflight
 
-
+    settings, creds = load_settings(), load_creds()
+    client = KalshiClient(base_url(settings, creds.env),
+                          KalshiSigner(creds.key_id, creds.private_key_path))
+    positions = {p.ticker: p for p in client.discover_positions()}
+    if args.ticker not in positions:
+        sys.exit(f"{args.ticker} not in positions: {list(positions)}")
+    q = liquidity_preflight(client, positions[args.ticker])
+    print(f"exit {'AVAILABLE' if q.available else 'UNAVAILABLE'} via {q.source.value}")
+    if q.available:
+        print(f"  ~${q.avg_price:.3f}/contract  total ${q.proceeds:.2f}  depth_ok={q.depth_ok}")
+    if q.note:
+        print(f"  note: {q.note}")
+    
 def cmd_follow(args):
     from .account.auth import KalshiSigner
     from .account.kalshi_client import KalshiClient
@@ -154,7 +197,11 @@ def main():
     bt.set_defaults(fn=cmd_backtest)
 
     sub.add_parser("fit-bid-model").set_defaults(fn=cmd_fit_bid_model)
-
+    
+    cl = sub.add_parser("check-liquidity")
+    cl.add_argument("--ticker", required=True, help="position ticker to probe")
+    cl.set_defaults(fn=cmd_check_liquidity)
+    
     fl = sub.add_parser("follow")
     fl.add_argument("--ticker", required=True, help="combo ticker from `lpf positions`")
     fl.add_argument("--game-id", required=True, help="NBA game id (nba_api format)")
