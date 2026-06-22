@@ -7,13 +7,13 @@ import numpy as np
 import pytest
 
 from parlay_follower.game_feed.game_state import GameState, Leg, LegStatus
-from parlay_follower.game_feed.nba_stats import NBAStatsCache, PlayerSeasonStats, TeamSeasonStats
-from parlay_follower.probability.foul_model import FoulTroubleModel, foul_minutes_at_risk
-from parlay_follower.probability.game_context import GameContext
-from parlay_follower.probability.momentum import MomentumDetector
-from parlay_follower.probability.player_model import (
+from parlay_follower.nba.stats import NBAStatsCache, PlayerSeasonStats, TeamSeasonStats
+from parlay_follower.nba.foul_model import FoulTroubleModel, foul_minutes_at_risk
+from parlay_follower.nba.game_context import GameContext
+from parlay_follower.nba.momentum import MomentumDetector
+from parlay_follower.nba.player_model import (
     player_pts_over_prob, projected_minutes_remaining)
-from parlay_follower.probability.stern import SternModel
+from parlay_follower.nba.stern import SternModel
 
 
 # ---- helpers ----

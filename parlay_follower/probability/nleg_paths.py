@@ -40,7 +40,6 @@ import numpy as np
 from ..decision.bid_model import BidModel
 from ..decision.lsmc import basis
 from ..probability.copula import make_corr_matrix, nearest_psd
-from ..probability.stern import SternModel
 
 # How many simulation steps back to look for the momentum feature.
 _MOMENTUM_LOOKBACK = 4   # ~2 minutes at 96-step / 48-min resolution
@@ -84,7 +83,7 @@ class NLegBoundary:
 
 
 def simulate_joint(
-    stern: SternModel,
+    stern,
     leg_marginal_fns: list[Callable[[float, float], float]],
     rho: float,
     tau_start_min: float,
@@ -135,7 +134,7 @@ def simulate_joint(
 
 
 def build_nleg_boundary(
-    stern: SternModel,
+    stern,
     bid_model: BidModel,
     leg_marginal_fns: list[Callable[[float, float], float]],
     rho: float,

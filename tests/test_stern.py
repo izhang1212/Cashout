@@ -1,6 +1,6 @@
 import numpy as np
 
-from parlay_follower.probability.stern import SternModel
+from parlay_follower.nba.stern import SternModel
 
 
 def test_win_prob_basic_sanity():

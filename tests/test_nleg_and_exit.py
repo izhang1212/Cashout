@@ -8,7 +8,7 @@ from parlay_follower.market_data.exit_quote import (ExitSource, get_exit_quote,
                                                     liquidity_preflight)
 from parlay_follower.probability.copula import CorrelationTable
 from parlay_follower.probability.nleg_paths import build_nleg_boundary
-from parlay_follower.probability.stern import SternModel
+from parlay_follower.nba.stern import SternModel
 
 
 # ---- fake client to exercise exit-quote dispatch without the network ----

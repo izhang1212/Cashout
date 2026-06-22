@@ -15,7 +15,6 @@ import numpy as np
 
 from ..game_feed.game_state import GameState, Leg, LegStatus
 from .copula import CorrelationTable, joint_hit_samples, make_corr_matrix, nearest_psd
-from .stern import SternModel
 
 
 @dataclass
@@ -26,7 +25,7 @@ class ComboValuation:
     per_leg_probs: dict[str, float]
 
 
-def leg_live_prob(leg: Leg, gs: GameState, stern: SternModel,
+def leg_live_prob(leg: Leg, gs: GameState, stern,
                   prop_probs: dict[str, float] | None = None) -> float:
     """Per-leg probability for LIVE legs.
 
@@ -72,7 +71,7 @@ def leg_live_prob(leg: Leg, gs: GameState, stern: SternModel,
     return 0.5  # explicit "no model" placeholder
 
 
-def price_combo(legs: list[Leg], gs: GameState, stern: SternModel,
+def price_combo(legs: list[Leg], gs: GameState, stern,
                 corr: CorrelationTable, n_paths: int = 20000,
                 prop_probs: dict[str, float] | None = None,
                 rng: np.random.Generator | None = None) -> ComboValuation:

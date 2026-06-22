@@ -1,188 +1,132 @@
 # Live Parlay Follower
 
-Optimal cash-out timing for Kalshi NBA combos via **exact dynamic programming**.
+Real-time optimal cash-out timing for Kalshi sports combos (NBA and MLB) via exact dynamic programming.
 
-Given a multi-leg NBA position ("combo") on Kalshi, this system follows the game live, re-prices the position every few seconds, and tells you the optimal moment to sell — solving the same optimal stopping problem as American option exercise, exactly, by Bellman backward induction. Full design rationale lives in
-`docs/Live_Parlay_Follower_Project_Spec_v2.docx`.
+## What it does
 
-**Alert-only by default.** The system advises; the human executes. It never
-places orders.
+Given a multi-leg position ("combo") held on Kalshi, this system:
+
+1. **Auto-discovers** the position — contracts, cost basis, leg structure, and current exit price — directly from the Kalshi API. No manual entry.
+2. **Follows the live game** tick-by-tick from tip-off to final buzzer (NBA) or first pitch to last out (MLB), tracking each leg's status in real time.
+3. **Re-prices the position** at each tick: calibrated per-leg win probabilities, joint combo fair value, the live executable exit bid, and the expected value of continuing to hold.
+4. **Emits a SELL signal** the instant the market bid crosses the precomputed, provably optimal exercise boundary — with a one-line explanation and live P&L.
+
+Alert-only by default. The system advises; the human executes.
+
+## Inspiration
+
+Holding a tradeable parlay is an **optimal stopping problem** — the same mathematical category as American option early exercise. At every instant the holder owns a claim with some model fair value, faces a live market bid (the cash-out offer), and must decide whether the bid exceeds the expected value of continuing to hold.
+
+Because the game state is low-dimensional and discrete, this stopping problem can be solved **exactly** by dynamic programming (Bellman backward induction on a state grid) — no approximation needed for the core case. The result is a precomputed exercise boundary: a surface in (time remaining, score lead) space that tells you, for every possible game state, whether the current bid is worth taking. Approximation (Longstaff–Schwartz Monte Carlo) enters only when player-prop legs push the state space beyond what a grid can hold.
+
+## Data sources
+
+| Source | What we pull | Used for |
+|---|---|---|
+| **Kalshi REST API** (authenticated, RSA-PSS signed) | Open positions, contracts, cost basis, combo leg tickers, live order-book bids and depth, RFQ exit quotes | Position discovery, live exit pricing, haircut model calibration |
+| **NBA Stats API** (`nba_api`, free) | Live box scores, play-by-play, player minutes/stats/fouls, team pace and ratings | Live game state, per-leg win probabilities, foul trouble and momentum adjustments |
+| **MLB Stats API** (`mlb-statsapi`, free) | Live linescore (inning, outs, runners on base, score), play-by-play, player batting/pitching stats | Live MLB game state, win expectancy, player prop projections |
+
+## Methods and models
+
+### Win probability
+
+**NBA — Stern (1994) Brownian motion model.** Score differential is modeled as Brownian motion with drift calibrated to the pregame spread: `D(t) ~ BM(μ, σ)`. Win probability is a closed-form normal CDF in (lead, time remaining). Supplies closed-form transition probabilities for the DP grid and is augmented by:
+- **Foul trouble weighting** — player importance (usage × minutes share) scales the win-probability impact of star players sitting with fouls.
+- **Scoring run detection** — a rolling 2.5-minute window flags momentum runs ≥ 7 net points and nudges the model toward mean reversion, triggering SELL at the temporary market-price peak.
+- **Pace-aware totals** — Bayesian blend of current-game scoring rate with team season pace; Q4 adjustments for clock management (close games) and intentional fouling (blowouts).
+- **Live drift update** — each tick back-solves an implied drift `μ` from the Kalshi moneyline market price and blends it with the pregame estimate, forcing a boundary rebuild when the shift is material.
+
+**MLB — Run expectancy Markov chain.** Win probability is computed by Monte Carlo simulation of remaining half-innings, drawing per-half-inning run totals from a team-adjusted Poisson distribution anchored to the standard 24-state run expectancy matrix (Tango et al.). Conditions on the full game state: inning, half, outs, runners on base, and score differential.
+
+### Joint modeling (correlation)
+
+Same-game legs are correlated. Joint resolution is modeled with a **Gaussian copula** whose correlation matrix is estimated from historical co-resolution of comparable leg pairs. State-conditional correlation (close vs. blowout, early vs. late) is maintained as a lookup table.
+
+Monte Carlo simulation of joint forward paths yields the combo's full terminal payoff distribution. The mean is the model fair value; the full distribution feeds the risk adjustment.
+
+### Bid model
+
+The live exit bid is modeled as:
+
+```
+M(t) = F_mm(t) × (1 − h(τ, p, k))
+```
+
+where `F_mm` is a market-maker fair value (market-implied legs through the copula), and `h` is a haircut function of time remaining `τ`, combo probability `p`, and number of live legs `k`. Parameters are fit from logged real combo bids. The policy always optimizes against **depth-weighted executable proceeds** for the actual position size, not the top-of-book price.
+
+### Decision engine
+
+**Exact DP (single game-outcome leg).** The Bellman equation is solved by backward induction over a discretized (time, score-diff) grid:
+
+```
+V(t, s) = max( M(t, s),  E[ V(t+1, s′) | s ] )
+```
+
+with transitions from the Stern diffusion (closed form). The result is a precomputed exercise boundary — live operation is a fast table lookup.
+
+**LSMC (n-leg or prop combos).** When player-prop legs add continuous dimensions, the system switches to Longstaff–Schwartz Monte Carlo: simulate joint forward paths, regress realized continuation payoffs on a polynomial basis of the state vector `[τ, score_diff, n_completed, combo_prob, momentum]`, and use the fitted regression as the boundary. The same Bellman logic, approximated — the industry technique for Bermudan swaption pricing.
+
+**Robust ensemble.** The DP runs under a small ensemble of perturbed models. HOLD requires unanimity; any SELL from any ensemble member triggers a SELL. This is the system's built-in acknowledgment that model probabilities are estimates.
+
+**Shrinkage.** Each leg's model probability is shrunk toward the Kalshi market-implied probability in proportion to demonstrated edge. Until the paper-trading log proves the model beats the market on a leg type, the market gets the greater weight — biasing toward earlier, safer exits.
+
+## Output
+
+Every tick the system prints a status line. When the boundary is crossed it emits a SELL signal:
+
+```
+[12:34:07] HOLD  | fv=0.412  bid=0.380  cont=0.431  margin=-0.051
+           2/3 legs clinched, 8.2m left, via lsmc_nleg, exit=order_book
+           HOME on a 9-pt run (H 9-0 A, last 2.1m); urgency=0.74
+
+[12:41:22] SELL  | fv=0.389  bid=0.445  cont=0.391  margin=+0.054
+           2/3 legs clinched, 4.1m left, via lsmc_nleg, exit=order_book
+           Leg 2 clinched; executable bid exceeds continuation value;
+           5/5 ensemble members agree. P&L: +$0.82 on $0.50 cost basis.
+```
+
+Fields:
+- `fv` — model fair value of the combo
+- `bid` — current executable exit price per contract
+- `cont` — estimated continuation value (expected value of holding one more step)
+- `margin` — `bid − cont` (positive = SELL is favored)
 
 ## Project layout
+
 ```
 live-parlay-follower/
-├── README.md
-├── requirements.txt
-├── pyproject.toml
-├── .env.example                  # Kalshi API credentials template
-├── config/
-│   └── settings.yaml             # model, decision, bid-model parameters
-├── docs/
-│   └── Live_Parlay_Follower_Project_Spec_v2.docx
-├── data/logs/                    # bid + game logs (gitignored; calibration fuel)
-├── scripts/
-│   ├── day_one_recon.py          # lock the Kalshi data contract (run FIRST)
-│   └── log_bids.py               # standalone bid logger for games you don't hold
-├── src/parlay_follower/
-│   ├── config.py                 # settings.yaml + .env loader
-│   ├── cli.py                    # lpf entry point
-│   ├── account/
-│   │   ├── auth.py               # RSA-PSS request signing (3 headers, ms timestamps)
-│   │   └── kalshi_client.py      # positions, fills, order books, multivariate, RFQ
-│   ├── market_data/
-│   │   ├── orderbook.py          # depth-weighted executable proceeds (not top-of-book)
-│   │   ├── exit_quote.py         # UNIFIED exit pricing: order-book vs RFQ vs illiquid
-│   │   └── bid_logger.py         # persistent bid+state logging -> haircut calibration
-│   ├── game_feed/
-│   │   ├── game_state.py         # state vector, Leg, deterministic resolvers
-│   │   └── nba_feed.py           # nba_api live polling
-│   ├── probability/
-│   │   ├── stern.py              # Brownian-motion win prob + DP transition kernel
-│   │   ├── calibration.py        # isotonic recalibration, Brier, reliability curves
-│   │   ├── copula.py             # Gaussian copula, state-conditional correlation
-│   │   ├── monte_carlo.py        # combo fair value + full payoff distribution
-│   │   ├── nleg_paths.py         # general n-leg joint sim -> LSMC boundary
-│   │   └── shrinkage.py          # shrink-to-market + EdgeLedger (paper-trading gate)
-│   ├── decision/
-│   │   ├── bid_model.py          # empirical haircut h(tau, p, k); fit from logs
-│   │   ├── threshold_policy.py   # tuned baseline the DP must beat
-│   │   ├── exact_dp.py           # Bellman backward sweep (single game-outcome leg)
-│   │   ├── lsmc.py               # Longstaff–Schwartz primitives
-│   │   ├── engine.py             # DISPATCHER: exact DP for 1 leg, LSMC for n legs
-│   │   ├── robust.py             # ensemble DP: HOLD requires unanimity
-│   │   └── signal.py             # HOLD/SELL signal + explanation
-│   ├── backtest/
-│   │   ├── replay.py             # tick-by-tick replay; common-random-number studies
-│   │   ├── policies.py           # hold-to-end, first-leg, halftime, profit-multiple
-│   │   └── metrics.py            # mean P&L, Sharpe-like, bust rate, signal hit rate
-│   └── live/
-│       ├── follower.py           # orchestration loop (alert-only)
-│       └── alerts.py             # console / loud-console sinks
-└── tests/                        # stern, DP, order book, copula/MC, leg resolvers
+├── parlay_follower/
+│   ├── nba/               # NBA-specific: feed, stats, Stern model, foul/momentum/player context, follower
+│   ├── mlb/               # MLB-specific: feed, stats, win model, player props, context, follower
+│   ├── probability/       # Shared math: copula, shrinkage, Monte Carlo, LSMC paths, Stern model
+│   ├── decision/          # Shared optimizer: exact DP, LSMC, robust ensemble, bid model, signal
+│   ├── game_feed/         # Shared game state, Leg/LegStatus types, resolvers
+│   ├── account/           # Kalshi auth (RSA-PSS) and REST client
+│   ├── market_data/       # Order-book pricing, RFQ, exit quote dispatch, bid logger
+│   ├── backtest/          # Tick-by-tick replay, policy comparison, P&L metrics
+│   └── cli.py             # lpf command-line entry point
+├── config/settings.yaml   # Model, decision, and bid-model parameters
+├── scripts/               # Standalone bid logger, day-one API recon
+└── tests/
 ```
 
-## Setup
+## Quickstart
 
 ```bash
-python -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
 pip install -e .
+cp .env.example .env      # fill in KALSHI_API_KEY_ID + KALSHI_PRIVATE_KEY_PATH
 
-cp .env.example .env
-# Generate an API key pair at Kalshi: Settings -> API.
-# Save the private key PEM, fill in .env. Start with KALSHI_ENV=demo.
-```
+lpf positions             # discover your combo ticker and cost basis
+lpf inspect --ticker KXNBACOMBO-...   # show exit value, leg probs, P&L
 
-## Order of operations
-
-**1. Day-one recon (do this before anything else).**
-
-```bash
-python scripts/day_one_recon.py
-```
-
-Answers the project's one open question — are combo order books queryable via
-public market-data endpoints, or RFQ-only? Lock the findings into
-`docs/data_contract.md` and resolve every `RECON:` comment in the code.
-
-**2. Sanity-check the engine on synthetic games.**
-
-```bash
-lpf backtest --spread -4.5 --q-other 0.6 --entry 0.30 --n-games 5000
-```
-
-Prints a policy comparison table (exact DP vs. hold-to-end vs. naive rules) and
-saves `exercise_boundary.png` — the SELL/HOLD region in (time remaining, lead)
-space, the basketball analogue of an American option's early-exercise region.
-Note the epistemic status printed at the bottom: synthetic backtests prove the
-policy is optimal *under the model*; only forward data tests the model.
-
-**3. Start logging real bids (every game night, even games you don't hold).**
-
-```bash
-python scripts/log_bids.py --game-id 0042500404 \
-    --combo-ticker KXNBACOMBO-... --leg-ticker KXNBA-...-ML --spread -4.5
-```
-
-**4. Refit the haircut model once logs accumulate.**
-
-```bash
-lpf fit-bid-model     # then update config/settings.yaml [bid_model]
-```
-
-The shipped haircut parameters are placeholders. The exercise boundary is only
-as honest as this calibration.
-
-**5. Follow a live position.**
-
-```bash
-lpf positions   # discover your combo ticker + cost basis
-lpf follow --ticker KXNBACOMBO-... --game-id 0042500404 --spread -4.5 \
+# Follow a live NBA game
+lpf follow --sport nba --ticker KXNBACOMBO-... --game-id 0042500404 --spread -4.5 \
     --leg "moneyline:side=home@KXNBA-...-ML" \
     --leg "total_over:line=224.5@KXNBA-...-TOTAL"
+
+# Follow a live MLB game
+lpf follow --sport mlb --ticker KXMLBCOMBO-... --game-id 745528 \
+    --leg "moneyline@KXMLB-...-ML" \
+    --leg "hits_over:player=Shohei Ohtani,line=1.5@KXMLB-...-HITS"
 ```
-
-## Liquidity reality (read this before trusting an exit)
-
-Kalshi has two different exit mechanisms, and they are not equally reliable:
-
-- **Single-leg markets** trade on a **visible order book**. The exit bid is
-  pollable any time and almost always present. *Most reliable mode.*
-- **Combos (multi-leg)** are priced by **RFQ** — there is no resting bid to
-  poll. You request a quote and market makers may or may not respond. "No one
-  willing to trade" is an empty RFQ. Liquidity thins hard beyond 3–4 legs.
-
-Practical guidance baked into the tool: **stick to single legs or 2–3 leg
-combos.** `exit_quote.py` handles all three cases (book / RFQ / illiquid) and
-never pretends a price exists. Always run a preflight first:
-
-```bash
-lpf check-liquidity --ticker KXNBACOMBO-...
-```
-
-The live follower also runs this automatically at startup and surfaces "no exit
-liquidity right now" as a HOLD reason rather than crashing or inventing a price.
-
-## n legs
-
-The system is leg-count-agnostic. `decision/engine.py` dispatches:
-- **one game-outcome leg** (moneyline/total) → exact DP (provably optimal),
-- **anything else** (2+ legs, or a single prop) → LSMC on simulated joint paths
-  (`probability/nleg_paths.py`), which handles any number/mix of legs.
-
-Callers get an identical `Recommendation` either way, so adding legs changes
-nothing downstream.
-
-## Tests
-
-```bash
-pytest -q
-```
-
-## The paper-trading gate (read before risking money)
-
-No stopping algorithm can rescue a probability model without edge. Before any
-real capital relies on a SELL signal:
-
-1. Run the follower in alert-only mode for several weeks across many games.
-2. Use `probability/shrinkage.EdgeLedger.edge_report()` per leg type: were the
-   model's disagreements with the market right more often than wrong?
-3. Leg types without demonstrated forward edge stay shrunk toward market
-   probabilities (`shrinkage_unproven_weight` in settings) — which correctly
-   biases toward earlier, safer exits.
-
-Size anything live as tuition, not income, until the forward log says otherwise.
-This software is a research and decision-support tool, not financial advice.
-
-## Known v1 approximations (each has a planned upgrade path)
-
-- The DP grid models the moneyline leg via the score-diff diffusion; other live
-  legs enter as a multiplicative survival probability between boundary
-  refreshes. Upgrade: add leg dimensions to the grid (totals) or use the LSMC
-  branch (props).
-- Totals are priced with a Normal-around-pace approximation. Upgrade: LightGBM
-  totals model with isotonic recalibration.
-- The robust ensemble uses parameter perturbation. Upgrade: bootstrap-refit
-  models on historical seasons (interface unchanged).
-- Player-prop probabilities default to 0.5 until the LightGBM prop model is
-  trained — and the shrinkage layer treats them as unproven accordingly.

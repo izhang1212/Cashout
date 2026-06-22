@@ -13,7 +13,7 @@ try:
 except ImportError:  # dotenv is optional in CI
     pass
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = Path(__file__).resolve().parents[1]
 SETTINGS_PATH = ROOT / "config" / "settings.yaml"
 
 

@@ -29,7 +29,7 @@ import numpy as np
 from scipy.stats import norm
 
 from ..game_feed.game_state import GameState
-from ..game_feed.nba_stats import NBAStatsCache
+from .stats import NBAStatsCache
 from .foul_model import foul_minutes_at_risk
 
 # Bayesian prior strength in minutes: season rate weighted as if we saw N minutes.

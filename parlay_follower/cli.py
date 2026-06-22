@@ -126,6 +126,79 @@ def cmd_fit_bid_model(args):
     print("Update config/settings.yaml [bid_model] with these values.")
     if bm.residual_std > 0.05:
         print("residual_std is large -> consider adding the current bid as a DP state variable.")
+def cmd_inspect(args):
+    """Show a full snapshot of one combo position: size, cost, payout, cash-out, per-leg probs."""
+    from .account.auth import KalshiSigner
+    from .account.kalshi_client import KalshiClient
+    from .config import base_url, load_creds, load_settings
+    from .market_data.exit_quote import get_exit_quote
+    from .market_data.orderbook import best_bid, parse_yes_bids
+
+    settings, creds = load_settings(), load_creds()
+    client = KalshiClient(base_url(settings, creds.env),
+                          KalshiSigner(creds.key_id, creds.private_key_path))
+    positions = {p.ticker: p for p in client.discover_positions()}
+    if args.ticker not in positions:
+        sys.exit(f"{args.ticker} not in positions: {list(positions)}")
+
+    pos = positions[args.ticker]
+    payout = pos.contracts * 1.00        # Kalshi contracts pay $1.00 each if they win
+    pnl_if_win  = payout - pos.cost_basis_dollars
+
+    print(f"\n{'='*55}")
+    print(f"  COMBO: {pos.ticker}")
+    print(f"{'='*55}")
+    print(f"  Contracts held : {pos.contracts}")
+    print(f"  Paid (cost)    : ${pos.cost_basis_dollars:.2f}")
+    print(f"  Payout if wins : ${payout:.2f}   (P&L +${pnl_if_win:.2f})")
+
+    # --- current exit (cash-out) value ---
+    print(f"\n  --- Exit quote ---")
+    q = get_exit_quote(client, pos)
+    if q.available:
+        pnl_now = q.proceeds - pos.cost_basis_dollars
+        pnl_sign = "+" if pnl_now >= 0 else ""
+        print(f"  Cash-out now   : ${q.proceeds:.2f}  "
+              f"(${q.avg_price:.3f}/contract, P&L {pnl_sign}${pnl_now:.2f})")
+        print(f"  Source         : {q.source.value}"
+              + (f"  [{q.note}]" if q.note else ""))
+    else:
+        print(f"  Cash-out now   : UNAVAILABLE ({q.source.value}: {q.note})")
+
+    # --- leg structure from the market endpoint ---
+    print(f"\n  --- Legs & market-implied probabilities ---")
+    try:
+        market_info = client.get_market(pos.ticker)
+    except Exception as e:
+        market_info = {}
+        print(f"  (could not fetch market metadata: {e})")
+
+    # Kalshi may embed leg tickers under different field names — try several.
+    legs_raw = (
+        market_info.get("legs") or
+        market_info.get("multileg_structure") or
+        market_info.get("selected_markets") or
+        []
+    )
+    if not legs_raw:
+        # Print raw keys so we can identify the right field during RECON
+        print(f"  RECON: market fields = {list(market_info.keys())}")
+        print(f"  Re-run after confirming field name; or pass --leg tickers manually.")
+    else:
+        for i, leg in enumerate(legs_raw):
+            leg_ticker = leg.get("ticker") or leg.get("market_ticker") or str(leg)
+            side = leg.get("side", "yes")
+            try:
+                levels = parse_yes_bids(client.get_orderbook(leg_ticker))
+                prob = best_bid(levels)
+                prob_str = f"{prob*100:.1f}%" if prob else "no bids"
+            except Exception as e:
+                prob_str = f"error ({e})"
+            print(f"  Leg {i+1}: {leg_ticker}  side={side}  implied prob ≈ {prob_str}")
+
+    print(f"{'='*55}\n")
+
+
 def cmd_check_liquidity(args):
     from .account.auth import KalshiSigner
     from .account.kalshi_client import KalshiClient
@@ -145,25 +218,10 @@ def cmd_check_liquidity(args):
     if q.note:
         print(f"  note: {q.note}")
     
-def cmd_follow(args):
-    from .account.auth import KalshiSigner
-    from .account.kalshi_client import KalshiClient
-    from .config import base_url, load_creds, load_settings
+def _parse_legs(leg_specs: list[str]) -> list:
     from .game_feed.game_state import Leg
-    from .live.alerts import loud_console_alert
-    from .live.follower import LiveFollower
-
-    settings, creds = load_settings(), load_creds()
-    client = KalshiClient(base_url(settings, creds.env),
-                          KalshiSigner(creds.key_id, creds.private_key_path))
-    positions = {p.ticker: p for p in client.discover_positions()}
-    if args.ticker not in positions:
-        sys.exit(f"Ticker {args.ticker} not found in your positions: {list(positions)}")
-
-    # v1: legs supplied on the command line until multivariate lookup is recon'd.
-    # Format: kind:param=value[,param=value][@leg_market_ticker]
     legs = []
-    for j, spec in enumerate(args.leg or []):
+    for j, spec in enumerate(leg_specs or []):
         market = ""
         if "@" in spec:
             spec, market = spec.split("@", 1)
@@ -173,12 +231,40 @@ def cmd_follow(args):
             k, v = kv.split("=")
             params[k] = float(v) if v.replace(".", "", 1).replace("-", "", 1).isdigit() else v
         legs.append(Leg(leg_id=f"leg{j}", kind=kind, params=params, market_ticker=market))
+    return legs
 
-    LiveFollower(
-        client=client, position=positions[args.ticker], legs=legs,
-        game_id=args.game_id, pregame_spread=args.spread,
-        settings=settings, alert_fn=loud_console_alert,
-    ).run()
+
+def cmd_follow(args):
+    from .account.auth import KalshiSigner
+    from .account.kalshi_client import KalshiClient
+    from .config import base_url, load_creds, load_settings
+
+    settings, creds = load_settings(), load_creds()
+    client = KalshiClient(base_url(settings, creds.env),
+                          KalshiSigner(creds.key_id, creds.private_key_path))
+    positions = {p.ticker: p for p in client.discover_positions()}
+    if args.ticker not in positions:
+        sys.exit(f"Ticker {args.ticker} not found in your positions: {list(positions)}")
+
+    legs = _parse_legs(args.leg)
+
+    if args.sport == "mlb":
+        from .live.alerts import loud_console_alert
+        from .mlb.follower import MLBFollower
+        MLBFollower(
+            client=client, position=positions[args.ticker], legs=legs,
+            game_pk=args.game_id,
+            pregame_home_advantage_runs=float(args.spread) if args.spread else 0.15,
+            settings=settings, alert_fn=loud_console_alert,
+        ).run()
+    else:
+        from .live.alerts import loud_console_alert
+        from .nba.follower import LiveFollower
+        LiveFollower(
+            client=client, position=positions[args.ticker], legs=legs,
+            game_id=args.game_id, pregame_spread=args.spread or 0.0,
+            settings=settings, alert_fn=loud_console_alert,
+        ).run()
 
 
 def main():
@@ -197,18 +283,27 @@ def main():
     bt.set_defaults(fn=cmd_backtest)
 
     sub.add_parser("fit-bid-model").set_defaults(fn=cmd_fit_bid_model)
-    
+
+    ins = sub.add_parser("inspect", help="Show position size, cost, payout, cash-out value, and per-leg probabilities")
+    ins.add_argument("--ticker", required=True, help="combo ticker from `lpf positions`")
+    ins.set_defaults(fn=cmd_inspect)
+
     cl = sub.add_parser("check-liquidity")
     cl.add_argument("--ticker", required=True, help="position ticker to probe")
     cl.set_defaults(fn=cmd_check_liquidity)
     
     fl = sub.add_parser("follow")
     fl.add_argument("--ticker", required=True, help="combo ticker from `lpf positions`")
-    fl.add_argument("--game-id", required=True, help="NBA game id (nba_api format)")
-    fl.add_argument("--spread", type=float, required=True, help="pregame home line")
+    fl.add_argument("--game-id", required=True, help="game id (NBA: nba_api format; MLB: gamePk)")
+    fl.add_argument("--sport", choices=["nba", "mlb"], default="nba", help="sport (default: nba)")
+    fl.add_argument("--spread", type=float, default=None,
+                    help="NBA: pregame home line (e.g. -4.5). MLB: home advantage in runs (default 0.15)")
     fl.add_argument("--leg", action="append",
-                    help="moneyline:side=home@TICKER | total_over:line=224.5@TICKER | "
-                         "player_points_over:player=Name,line=24.5@TICKER")
+                    help="NBA: moneyline:side=home@TICKER | total_over:line=224.5@TICKER | "
+                         "player_points_over:player=Name,line=24.5@TICKER  "
+                         "MLB: moneyline | total_over:line=8.5 | hits_over:player=Name,line=1.5 | "
+                         "home_runs:player=Name | total_bases_over:player=Name,line=2.5 | "
+                         "strikeouts_over:player=Name,line=6.5")
     fl.set_defaults(fn=cmd_follow)
 
     args = p.parse_args()

@@ -44,19 +44,19 @@ from ..account.kalshi_client import KalshiClient, Position
 from ..decision.bid_model import BidModel
 from ..decision.engine import DecisionEngine
 from ..decision.signal import Signal
-from ..game_feed import nba_feed
+from . import feed as nba_feed
 from ..game_feed.game_state import Leg, LegStatus, update_all
-from ..game_feed.nba_stats import NBAStatsCache
+from .stats import NBAStatsCache
 from ..market_data.bid_logger import BidLogger
 from ..market_data.exit_quote import get_exit_quote, liquidity_preflight
 from ..market_data.orderbook import best_bid, parse_yes_bids
 from ..probability.copula import CorrelationTable
-from ..probability.foul_model import FoulTroubleModel
-from ..probability.game_context import GameContext
-from ..probability.momentum import MomentumDetector
+from .foul_model import FoulTroubleModel
+from .game_context import GameContext
+from .momentum import MomentumDetector
 from ..probability.monte_carlo import synthetic_fair_value
 from ..probability.shrinkage import shrink
-from ..probability.stern import SternModel
+from .stern import SternModel
 
 # Market-prob order-book results are cached for this many seconds to avoid
 # hammering the API with a separate request per leg per tick.

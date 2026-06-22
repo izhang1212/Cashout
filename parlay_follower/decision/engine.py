@@ -34,7 +34,7 @@ from ..game_feed.game_state import GameState, Leg, LegStatus
 from ..probability.copula import CorrelationTable
 from ..probability.monte_carlo import leg_live_prob, price_combo
 from ..probability.nleg_paths import NLegBoundary, build_nleg_boundary
-from ..probability.stern import SternModel
+
 from .bid_model import BidModel
 from .exact_dp import DPResult, solve
 from .robust import make_ensemble, robust_lookup, robust_solve
@@ -71,7 +71,7 @@ class DecisionEngine:
     def __init__(self, stern: SternModel, bid_model: BidModel,
                  corr: CorrelationTable, *, mc_paths: int = 20000,
                  dt_min: float = 0.5, risk_aversion: float = 0.0,
-                 pregame_spread: float = 0.0, robust_ensemble_size: int = 1):
+                 pregame_spread: float = 0.0, robust_ensemble_size: int = 1, use_exact_dp: bool = True):
         self.stern = stern
         self.bid_model = bid_model
         self.corr = corr
@@ -80,6 +80,7 @@ class DecisionEngine:
         self.risk_aversion = risk_aversion
         self.pregame_spread = pregame_spread
         self.robust_ensemble_size = robust_ensemble_size
+        self.use_exact_dp = use_exact_dp
         self._dp: DPResult | None = None
         self._dp_ensemble: list[DPResult] | None = None
         self._nleg: NLegBoundary | None = None
@@ -151,7 +152,7 @@ class DecisionEngine:
 
         self._last_build_tau = gs.tau_minutes
 
-        single = _single_game_outcome(legs)
+        single = _single_game_outcome(legs) if self.use_exact_dp else None
         if single is not None and single.kind == "moneyline":
             # Other legs (if any) fold in as a constant survival probability.
             others = [l for l in legs if l is not single and l.status is LegStatus.LIVE]
