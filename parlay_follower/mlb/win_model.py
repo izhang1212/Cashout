@@ -46,8 +46,9 @@ _RE_TABLE: list[list[float]] = [
     [2.417, 1.634, 0.798],  # bases loaded
 ]
 
-# League-average runs per half-inning (used when no team data available)
-_LEAGUE_AVG_RUNS_PER_HALF_INN = 0.50   # ~4.5 runs/9-inn team = 0.5/half-inning
+# League-average runs per half-inning (used when no team data available).
+# Calibrated from 2025 regular-season per-inning data (N=150 games).
+_LEAGUE_AVG_RUNS_PER_HALF_INN = 0.4741
 
 # Score-diff std per out (calibrated to empirical MLB data).
 # A full 54-out game has ~sqrt(54)*0.45 ≈ 3.3 pts std, which matches
@@ -66,15 +67,22 @@ class MLBWinModel:
     """
 
     def __init__(self, stats_cache: MLBStatsCache | None = None,
-                 pregame_home_advantage_runs: float = 0.15):
+                 pregame_home_advantage_runs: float = 0.15,
+                 lambda_per_half_inning: float | None = None,
+                 variance_factor: float | None = None):
         """
         pregame_home_advantage_runs: expected extra runs home team scores
             over a full game due to home field. Translates to mu per out.
+        lambda_per_half_inning: Poisson run rate per half-inning (from calibration).
+        variance_factor: overdispersion factor for run total projection (from calibration).
         """
         self.stats = stats_cache or MLBStatsCache()
         self.sigma = _SIGMA_PER_OUT
-        # mu: drift of score_diff per out (positive = home favored)
         self.mu = pregame_home_advantage_runs / 54.0
+        self.lambda_per_half_inning = (lambda_per_half_inning
+                                       if lambda_per_half_inning is not None
+                                       else _LEAGUE_AVG_RUNS_PER_HALF_INN)
+        self.variance_factor = variance_factor if variance_factor is not None else 1.2
 
     # ---------- primary interface (matches SternModel duck type) ----------
 

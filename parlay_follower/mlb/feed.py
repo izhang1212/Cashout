@@ -129,6 +129,26 @@ def _current_pitcher(pitcher_ids: list[int], all_players: dict) -> str:
     return all_players.get(p_key, {}).get("person", {}).get("fullName", "")
 
 
+def snapshot_multiple(game_pks: list) -> dict:
+    """Snapshot all games; returns dict[str(game_pk) -> MLBGameState]."""
+    return {str(int(pk)): snapshot(pk) for pk in game_pks}
+
+
+def poll_multiple(game_pks: list,
+                  interval_sec: float = 10.0) -> Iterator[dict]:
+    """Generator yielding fresh dict[str(game_pk) -> MLBGameState] each tick.
+
+    Continues until ALL games are final.
+    """
+    pks = [str(int(pk)) for pk in game_pks]
+    while True:
+        states = snapshot_multiple(pks)
+        yield states
+        if all(gs.final for gs in states.values()):
+            return
+        time.sleep(interval_sec)
+
+
 def poll(game_pk: int | str, interval_sec: float = 10.0) -> Iterator[MLBGameState]:
     """Generator yielding fresh MLBGameStates until the game is final.
 

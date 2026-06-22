@@ -230,6 +230,10 @@ def _parse_legs(leg_specs: list[str]) -> list:
         for kv in filter(None, params_str.split(",")):
             k, v = kv.split("=")
             params[k] = float(v) if v.replace(".", "", 1).replace("-", "", 1).isdigit() else v
+        # Cross-game MLB totals: rename kind so the engine falls through to prop_probs
+        # (which are computed per-game by MLBGameContext.compute_cross_game).
+        if kind in ("total_over", "total_under") and "game" in params:
+            kind = "cross_" + kind
         legs.append(Leg(leg_id=f"leg{j}", kind=kind, params=params, market_ticker=market))
     return legs
 
@@ -251,9 +255,12 @@ def cmd_follow(args):
     if args.sport == "mlb":
         from .live.alerts import loud_console_alert
         from .mlb.follower import MLBFollower
+        # Start with explicitly listed game IDs, then let the follower auto-add
+        # any game= params found in legs (_collect_game_pks inside MLBFollower).
+        explicit_pks = [pk.strip() for pk in args.game_id.split(",") if pk.strip()]
         MLBFollower(
             client=client, position=positions[args.ticker], legs=legs,
-            game_pk=args.game_id,
+            game_pks=explicit_pks,
             pregame_home_advantage_runs=float(args.spread) if args.spread else 0.15,
             settings=settings, alert_fn=loud_console_alert,
         ).run()
@@ -265,6 +272,73 @@ def cmd_follow(args):
             game_id=args.game_id, pregame_spread=args.spread or 0.0,
             settings=settings, alert_fn=loud_console_alert,
         ).run()
+
+
+def cmd_historical_backtest(args):
+    """Run the decision policy on real historical NBA/MLB games and compare vs benchmarks."""
+    from .backtest.historical_replay import (
+        historical_policy_comparison, pull_nba_games, pull_mlb_games,
+        nba_ticks_from_pbp, mlb_ticks_from_innings,
+    )
+    from .backtest.metrics import summarize
+    from .decision.bid_model import BidModel
+    from .decision.exact_dp import solve
+    from .probability.stern import SternModel
+
+    settings = load_settings()
+    m, d = settings["model"], settings["decision"]
+    bid_model = BidModel()
+
+    if args.sport == "nba":
+        print(f"Pulling {args.n_games} NBA games ({settings.get('season','2024-25')})...")
+        stern = SternModel(sigma_per_min=m["sigma_per_min"],
+                           pregame_spread=args.spread)
+        frames = pull_nba_games(n_games=args.n_games)
+        tick_games = []
+        rng = np.random.default_rng(42)
+        for df in frames:
+            result = nba_ticks_from_pbp(df, stern, bid_model,
+                                        q_prop=args.q_prop, k_live=2)
+            if result:
+                tick_games.append(result)
+        print(f"Built {len(tick_games)} tick series.\n")
+
+        q_other = lambda tau: args.q_prop
+        dp = solve(stern, bid_model, tau_start_min=48.0,
+                   moneyline_side="home", q_other=q_other, k_live=2,
+                   dt_min=d["dp_time_step_sec"] / 60.0,
+                   risk_aversion=d["risk_aversion"])
+        dp_lookup = lambda t, s: dp.lookup(t, s)[0]
+
+    else:  # mlb
+        print(f"Pulling {args.n_games} MLB games...")
+        tick_games = []
+        for innings in pull_mlb_games(n_games=args.n_games):
+            result = mlb_ticks_from_innings(innings, None, bid_model, line=args.line)
+            if result:
+                tick_games.append(result)
+        print(f"Built {len(tick_games)} tick series.\n")
+        dp_lookup = None
+
+    results = historical_policy_comparison(tick_games, dp_lookup)
+
+    print(f"{'policy':28s} {'n':>5s} {'mean P&L':>9s} {'sharpe':>8s} "
+          f"{'bust%':>7s} {'win%':>7s} {'p5':>7s} {'p95':>7s}")
+    print("-" * 85)
+    for name, pnls in sorted(results.items(),
+                              key=lambda x: -summarize(x[1])["mean_pnl"]):
+        s = summarize(pnls)
+        print(f"{name:28s} {s['n']:5d} {s['mean_pnl']:+9.4f} {s['sharpe_like']:8.3f} "
+              f"{100*s['bust_rate']:6.1f}% {100*s['win_rate']:6.1f}% "
+              f"{s['p5']:+7.3f} {s['p95']:+7.3f}")
+    print()
+    if "exact_dp" in results:
+        dp_mean = summarize(results["exact_dp"])["mean_pnl"]
+        baselines = {k: v for k, v in results.items() if k != "exact_dp"}
+        best_baseline = max(baselines, key=lambda k: summarize(baselines[k])["mean_pnl"])
+        best_mean = summarize(baselines[best_baseline])["mean_pnl"]
+        edge = dp_mean - best_mean
+        print(f"DP edge over best baseline ({best_baseline}): {edge:+.4f} per contract")
 
 
 def main():
@@ -284,6 +358,19 @@ def main():
 
     sub.add_parser("fit-bid-model").set_defaults(fn=cmd_fit_bid_model)
 
+    hb = sub.add_parser("historical-backtest",
+                         help="Run decision policy on real historical games")
+    hb.add_argument("--sport", choices=["nba", "mlb"], default="nba")
+    hb.add_argument("--n-games", type=int, default=100,
+                    help="Number of real games to pull (default 100)")
+    hb.add_argument("--spread", type=float, default=-4.5,
+                    help="NBA: pregame spread used at entry (default -4.5)")
+    hb.add_argument("--q-prop", type=float, default=0.65,
+                    help="Probability of the synthetic prop leg winning (default 0.65)")
+    hb.add_argument("--line", type=float, default=8.5,
+                    help="MLB: total runs line (default 8.5)")
+    hb.set_defaults(fn=cmd_historical_backtest)
+
     ins = sub.add_parser("inspect", help="Show position size, cost, payout, cash-out value, and per-leg probabilities")
     ins.add_argument("--ticker", required=True, help="combo ticker from `lpf positions`")
     ins.set_defaults(fn=cmd_inspect)
@@ -294,16 +381,20 @@ def main():
     
     fl = sub.add_parser("follow")
     fl.add_argument("--ticker", required=True, help="combo ticker from `lpf positions`")
-    fl.add_argument("--game-id", required=True, help="game id (NBA: nba_api format; MLB: gamePk)")
+    fl.add_argument("--game-id", required=True,
+                    help="NBA: nba_api game id. "
+                         "MLB: primary gamePk (required for legs without game= param). "
+                         "Multiple games are auto-detected from game= params in --leg specs; "
+                         "also accepts comma-separated list, e.g. 745528,745529,745530")
     fl.add_argument("--sport", choices=["nba", "mlb"], default="nba", help="sport (default: nba)")
     fl.add_argument("--spread", type=float, default=None,
                     help="NBA: pregame home line (e.g. -4.5). MLB: home advantage in runs (default 0.15)")
     fl.add_argument("--leg", action="append",
                     help="NBA: moneyline:side=home@TICKER | total_over:line=224.5@TICKER | "
                          "player_points_over:player=Name,line=24.5@TICKER  "
-                         "MLB: moneyline | total_over:line=8.5 | hits_over:player=Name,line=1.5 | "
-                         "home_runs:player=Name | total_bases_over:player=Name,line=2.5 | "
-                         "strikeouts_over:player=Name,line=6.5")
+                         "MLB cross-game totals: total_over:line=8.5,game=745528@TICKER  "
+                         "(each leg specifies its own gamePk via game=; "
+                         "moneyline and player props work the same as before)")
     fl.set_defaults(fn=cmd_follow)
 
     args = p.parse_args()

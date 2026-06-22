@@ -87,6 +87,53 @@ class MLBGameState:
         return self.runners * 3 + self.outs   # 8 base states × 3 out states
 
 
+@dataclass
+class MLBCrossGameState:
+    """Aggregate view across multiple independent MLB games for cross-game combos.
+
+    Each leg in a cross-game combo belongs to a specific game identified by
+    `leg.params["game"]` (the gamePk). This state provides the engine with
+    the combined time horizon and a neutral score_diff (games are independent).
+    """
+    game_states: dict  # str(game_pk) -> MLBGameState
+
+    @property
+    def tau_minutes(self) -> float:
+        active = [gs.tau_minutes for gs in self.game_states.values() if not gs.final]
+        return max(active, default=0.0)
+
+    @property
+    def score_diff(self) -> int:
+        return 0  # not meaningful across independent games
+
+    @property
+    def seconds_remaining(self) -> float:
+        return self.tau_minutes * 60.0
+
+    @property
+    def final(self) -> bool:
+        return all(gs.final for gs in self.game_states.values())
+
+    @property
+    def cumulative_runs(self) -> int:
+        return sum(gs.home_score + gs.away_score for gs in self.game_states.values())
+
+    @property
+    def game_id(self) -> str:
+        return ",".join(self.game_states.keys())
+
+
+def _leg_game_pk(leg: Leg) -> str:
+    """Return the leg's game pk as a string, or '' if none specified."""
+    raw = leg.params.get("game")   # None when absent (no default 0)
+    if raw is None:
+        return ""
+    try:
+        return str(int(float(raw)))
+    except (ValueError, TypeError):
+        return str(raw)
+
+
 def resolve_mlb_leg(leg: Leg, gs: MLBGameState) -> LegStatus:
     """Deterministic leg resolution from the current MLB game state."""
     k, p = leg.kind, leg.params
@@ -96,13 +143,13 @@ def resolve_mlb_leg(leg: Leg, gs: MLBGameState) -> LegStatus:
             return LegStatus.LIVE
         return LegStatus.COMPLETED if gs.score_diff > 0 else LegStatus.FAILED
 
-    if k == "total_over":
+    if k in ("total_over", "cross_total_over"):
         total = gs.home_score + gs.away_score
         if total > p["line"]:
             return LegStatus.COMPLETED
         return LegStatus.FAILED if gs.final else LegStatus.LIVE
 
-    if k == "total_under":
+    if k in ("total_under", "cross_total_under"):
         total = gs.home_score + gs.away_score
         if total > p["line"]:
             return LegStatus.FAILED
@@ -149,4 +196,27 @@ def update_mlb_legs(legs: list[Leg], gs: MLBGameState) -> list[Leg]:
     for leg in legs:
         if leg.status is LegStatus.LIVE:
             leg.status = resolve_mlb_leg(leg, gs)
+    return legs
+
+
+def update_mlb_legs_cross_game(legs: list[Leg],
+                                game_states: dict) -> list[Leg]:
+    """Resolve legs across multiple games; each leg carries its gamePk in params."""
+    return update_mlb_legs_generalized(legs, game_states)
+
+
+def update_mlb_legs_generalized(legs: list[Leg], game_states: dict,
+                                 primary_pk: str | None = None) -> list[Leg]:
+    """Resolve legs for same-game, cross-game, or mixed combos.
+
+    Legs with game= param route to that specific game state.
+    Legs without game= param use primary_pk (defaults to first game in dict).
+    """
+    _primary = primary_pk or next(iter(game_states.keys()), None)
+    for leg in legs:
+        if leg.status is LegStatus.LIVE:
+            pk = _leg_game_pk(leg) or _primary
+            gs = game_states.get(str(pk)) if pk else next(iter(game_states.values()), None)
+            if gs is not None:
+                leg.status = resolve_mlb_leg(leg, gs)
     return legs

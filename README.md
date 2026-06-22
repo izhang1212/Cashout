@@ -1,5 +1,4 @@
 # Live Parlay Follower
-
 Real-time optimal cash-out timing for Kalshi sports combos (NBA and MLB) via exact dynamic programming.
 
 ## What it does
@@ -37,7 +36,7 @@ Because the game state is low-dimensional and discrete, this stopping problem ca
 - **Pace-aware totals** — Bayesian blend of current-game scoring rate with team season pace; Q4 adjustments for clock management (close games) and intentional fouling (blowouts).
 - **Live drift update** — each tick back-solves an implied drift `μ` from the Kalshi moneyline market price and blends it with the pregame estimate, forcing a boundary rebuild when the shift is material.
 
-**MLB — Run expectancy Markov chain.** Win probability is computed by Monte Carlo simulation of remaining half-innings, drawing per-half-inning run totals from a team-adjusted Poisson distribution anchored to the standard 24-state run expectancy matrix (Tango et al.). Conditions on the full game state: inning, half, outs, runners on base, and score differential.
+**MLB — Per-game run total model.** Each leg in an MLB combo is a "total runs over" bet on a single game. For each game the system polls the live linescore (inning, outs, runners, score) and projects the final run total as: current runs + blended per-half-inning scoring rate × half-innings remaining, where the blending weight shifts from season team pace toward the current-game pace as innings accumulate. The projection is treated as Normal with Poisson-scaled variance, giving `P(final total > line)` in closed form. All games are polled simultaneously; legs from different games are treated as independent (copula ρ ≈ 0.05).
 
 ### Joint modeling (correlation)
 
@@ -125,8 +124,10 @@ lpf follow --sport nba --ticker KXNBACOMBO-... --game-id 0042500404 --spread -4.
     --leg "moneyline:side=home@KXNBA-...-ML" \
     --leg "total_over:line=224.5@KXNBA-...-TOTAL"
 
-# Follow a live MLB game
-lpf follow --sport mlb --ticker KXMLBCOMBO-... --game-id 745528 \
-    --leg "moneyline@KXMLB-...-ML" \
-    --leg "hits_over:player=Shohei Ohtani,line=1.5@KXMLB-...-HITS"
+# Follow MLB cross-game totals (typical use: total runs over in 3-4 separate games)
+lpf follow --sport mlb --ticker KXMLBCOMBO-... \
+    --game-id 745528,745529,745530 \
+    --leg "total_over:line=8.5,game=745528@KXMLB-...-G1TOTAL" \
+    --leg "total_over:line=7.5,game=745529@KXMLB-...-G2TOTAL" \
+    --leg "total_over:line=9.0,game=745530@KXMLB-...-G3TOTAL"
 ```

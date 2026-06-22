@@ -105,10 +105,16 @@ class DecisionEngine:
 
         NOTE: tau passed to these closures is in MINUTES.
 
-        For total legs we now use a pace-anchored projection instead of the
-        neutral 0.5 stub. The current game total and pace are closed over from
-        the live GameState at boundary-build time.
+        When use_exact_dp=False (MLB), all leg probabilities come from the
+        sport-specific game context via prop_probs — it handles same-game,
+        cross-game, and mixed combos correctly. The engine's internal Brownian
+        motion approximations for moneyline/total are only used for NBA (exact_dp=True).
         """
+        # MLB: always trust the external game-context probability.
+        if not self.use_exact_dp and prop_probs and leg.leg_id in prop_probs:
+            p = float(prop_probs[leg.leg_id])
+            return lambda d, tau, p=p: p
+
         stern = self.stern
 
         if leg.kind == "moneyline":
