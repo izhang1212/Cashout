@@ -69,8 +69,15 @@ def run_policy(ticks: Iterable[dict], combo_won: int, entry_price: float,
 
 def run_dp_policy(ticks: list[dict], combo_won: int, entry_price: float,
                   dp_lookup: Callable[[float, float], bool]) -> float:
-    """Same, but the policy is a precomputed DP boundary lookup(tau, diff)."""
+    """Same, but the policy is a precomputed DP boundary lookup(tau, diff).
+
+    Skips the terminal tick (tau=0): the DP's exercise=True sentinel at
+    tau=0 is a boundary condition, not a tradeable signal — at game end the
+    position settles at the true payoff (1 or 0), not the market bid.
+    """
     for tick in ticks:
+        if tick["tau_min"] <= 0.0:
+            break   # terminal — settle at true payoff below
         if dp_lookup(tick["tau_min"], tick["score_diff"]):
             return tick["executable_bid"] - entry_price
     return (1.0 if combo_won else 0.0) - entry_price

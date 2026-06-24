@@ -279,6 +279,8 @@ def historical_policy_comparison(tick_games: list[tuple[list[dict], int]],
         if dp_lookup is not None:
             sell = False
             for tick in ticks:
+                if tick["tau_min"] <= 0.0:
+                    break   # terminal tick — settle at true payoff, not market bid
                 if dp_lookup(tick["tau_min"], tick["score_diff"]):
                     results["exact_dp"].append(
                         tick["executable_bid"] - tick["entry_price"])

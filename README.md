@@ -91,10 +91,53 @@ Fields:
 - `cont` — estimated continuation value (expected value of holding one more step)
 - `margin` — `bid − cont` (positive = SELL is favored)
 
+## Architecture
+
+The project has two independent components that share the same mathematical models but serve different purposes:
+
+**C++ offline engine** (`cpp/`) — throughput-bound batch work, no Kalshi dependency:
+- Bellman DP solver: precomputes the exercise boundary on a 97 × 91 (time, score-diff) grid in **0.89 ms** using an exact CDF-based transition matrix (matches Python's `SternModel.transition_matrix()` exactly).
+- Backtester: replays 10K synthetic games against six strategies at **~10M events/sec** on a single core.
+- Verified to produce identical DP values as Python: V(24, 0) = 0.3760 in both.
+- 60 unit tests, no external framework.
+- Used for offline strategy validation and parameter calibration.
+
+**Python live engine** (`parlay_follower/`) — network-bound orchestration of a single real game:
+- Watches one live game tick-by-tick with **adaptive polling**: 1 s in the final 3 game-minutes (crunch time), 2 s otherwise.
+- Runs its own DP/LSMC in Python — correct choice because the live session is I/O-bound, the DP solve takes ~1 ms in NumPy, and the Python DP has session-specific behaviour the offline C++ solver doesn't need: it rebuilds every 5 game-minutes as legs resolve and as live Kalshi moneyline prices update the drift estimate `μ`.
+- Fires HOLD/SELL alerts; the human executes on Kalshi.
+
+The two components deliberately remain independent. The Python DP rebuilds dynamically mid-game (not a static precomputed table), uses risk-adjusted expectations and a robust model ensemble, and starts from the current game clock rather than tip-off — features that belong in the live session, not the offline benchmarker. The shared ground is `config/settings.yaml` (same calibrated parameters) and identical mathematical formulas.
+
+### C++ strategy comparison
+
+Results from `make bench` (N=10K games, σ=2.2845, spread=−4.5, entry=80% of model FV, k\_live=2):
+
+| Strategy | mean P&L | Sharpe | win% | bust% |
+|---|---|---|---|---|
+| dp\_boundary\_dynamic | +0.0853 | 0.174 | 40.3% | 53.7% |
+| dp\_boundary | +0.0853 | 0.174 | 40.3% | 53.7% |
+| sell\_at\_2x | +0.0648 | 0.163 | 49.4% | 50.6% |
+| sell\_first\_leg | +0.0615 | 0.171 | 52.2% | 35.0% |
+| sell\_at\_halftime | +0.0579 | 0.206 | 57.1% | 17.7% |
+| hold\_to\_resolution | +0.0853 | 0.174 | 40.3% | 59.7% |
+
+`dp_boundary_dynamic` switches from the pre-resolution grid (q\_prop=0.65) to a post-resolution grid (q=1.0) when the prop leg wins, and short-circuits to loss when it fails — matching the Python live engine's grid-rebuild logic.
+
+With the current placeholder bid-model parameters, the DP correctly identifies no profitable mid-game exits and matches `hold_to_resolution` exactly. The boundary becomes non-trivial once real Kalshi bid logs are used to calibrate the haircut parameters via `lpf fit-bid-model`.
+
 ## Project layout
 
 ```
 live-parlay-follower/
+├── cpp/                   # C++ offline backtester + DP solver (no Kalshi dependency)
+│   ├── include/           # Header-only library: event queue, Stern model, bid model,
+│   │   │                  #   DP solver (Bellman backward induction), strategy interface,
+│   │   └──                #   portfolio stats, backtest engine
+│   ├── tests/             # 60 unit tests (no external framework)
+│   ├── bench/             # Benchmark: 10K games, ~10M events/sec, 6-strategy comparison
+│   ├── Makefile           # Build: make test / make bench
+│   └── CMakeLists.txt     # CMake config (pybind11 binding stubbed for future use)
 ├── parlay_follower/
 │   ├── nba/               # NBA-specific: feed, stats, Stern model, foul/momentum/player context, follower
 │   ├── mlb/               # MLB-specific: feed, stats, win model, player props, context, follower

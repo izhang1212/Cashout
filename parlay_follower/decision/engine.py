@@ -41,7 +41,7 @@ from .robust import make_ensemble, robust_lookup, robust_solve
 
 # Rebuild the exercise boundary every N game-minutes to keep q_other and
 # pace-based totals fresh (even when no leg status changes).
-_REBUILD_INTERVAL_MIN = 5.0
+_REBUILD_INTERVAL_MIN = 2.0
 
 
 @dataclass

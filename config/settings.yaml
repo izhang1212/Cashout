@@ -6,7 +6,9 @@ kalshi:
   rfq_fallback: false
 game_feed:
   provider: nba_api
-  poll_interval_sec: 3
+  poll_interval_sec: 2             # down from 3; safe floor for nba_api CDN refresh rate
+  late_game_poll_interval_sec: 1   # used when tau_minutes <= late_game_threshold_min
+  late_game_threshold_min: 3       # last 3 game-minutes = ~6 min real time (stoppages)
   mlb_poll_interval_sec: 10
 model:
   sigma_per_min: 2.2845

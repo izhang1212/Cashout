@@ -196,10 +196,16 @@ class LiveFollower:
             self.alert_fn("[PREFLIGHT] No exit liquidity right now. Will keep watching; "
                           "for combos this is normal pre-game (RFQ opens near tip-off).")
 
-        interval = poll_interval or self.settings["game_feed"]["poll_interval_sec"]
+        base_interval = poll_interval or self.settings["game_feed"]["poll_interval_sec"]
+        late_interval = self.settings["game_feed"].get("late_game_poll_interval_sec", 1.0)
+        late_threshold = self.settings["game_feed"].get("late_game_threshold_min", 3.0)
+
+        def _adaptive_interval(gs) -> float:
+            return late_interval if gs.tau_minutes <= late_threshold else base_interval
+
         n_legs = max(1, len(self.legs))
 
-        for gs in nba_feed.poll(self.game_id, interval_sec=interval):
+        for gs in nba_feed.poll(self.game_id, interval_sec=_adaptive_interval):
             update_all(self.legs, gs)
             statuses = tuple(l.status for l in self.legs)
 

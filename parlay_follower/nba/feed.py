@@ -82,12 +82,18 @@ def snapshot(game_id: str) -> GameState:
     return gs
 
 
-def poll(game_id: str, interval_sec: float = 3.0,
+def poll(game_id: str,
+         interval_sec: float | Callable[[GameState], float] = 3.0,
          until: Callable[[GameState], bool] | None = None) -> Iterator[GameState]:
-    """Generator yielding fresh GameStates until the game is final (or `until`)."""
+    """Generator yielding fresh GameStates until the game is final (or `until`).
+
+    interval_sec may be a fixed float or a callable (GameState -> float) for
+    adaptive polling — e.g. tighter intervals in late-game crunch time.
+    """
     while True:
         gs = snapshot(game_id)
         yield gs
         if gs.final or (until and until(gs)):
             return
-        time.sleep(interval_sec)
+        sleep_dur = interval_sec(gs) if callable(interval_sec) else interval_sec
+        time.sleep(sleep_dur)
