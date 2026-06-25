@@ -174,3 +174,7 @@ lpf follow --sport mlb --ticker KXMLBCOMBO-... \
     --leg "total_over:line=7.5,game=745529@KXMLB-...-G2TOTAL" \
     --leg "total_over:line=9.0,game=745530@KXMLB-...-G3TOTAL"
 ```
+
+## References
+- [Bellman DP](https://en.wikipedia.org/wiki/Bellman_equation) 
+- [Longstaff-Schwartz LSMC](https://people.math.ethz.ch/~hjfurrer/teaching/LongstaffSchwartzAmericanOptionsLeastSquareMonteCarlo.pdf)
