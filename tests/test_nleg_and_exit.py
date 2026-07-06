@@ -1,14 +1,14 @@
 import numpy as np
 
-from parlay_follower.account.kalshi_client import Position
-from parlay_follower.decision.bid_model import BidModel, HaircutParams
-from parlay_follower.decision.engine import DecisionEngine
-from parlay_follower.game_feed.game_state import GameState, Leg, LegStatus
-from parlay_follower.market_data.exit_quote import (ExitSource, get_exit_quote,
+from parlay_follower.cashout.bid_model import BidModel, HaircutParams
+from parlay_follower.cashout.engine import DecisionEngine
+from parlay_follower.cashout.lsm.nleg_paths import build_nleg_boundary
+from parlay_follower.execution.account.kalshi_client import Position
+from parlay_follower.execution.market_data.exit_quote import (ExitSource, get_exit_quote,
                                                     liquidity_preflight)
-from parlay_follower.probability.copula import CorrelationTable
-from parlay_follower.probability.nleg_paths import build_nleg_boundary
-from parlay_follower.nba.stern import SternModel
+from parlay_follower.shared.copula import CorrelationTable
+from parlay_follower.shared.game_feed.game_state import GameState, Leg, LegStatus
+from parlay_follower.shared.stern import SternModel
 
 
 # ---- fake client to exercise exit-quote dispatch without the network ----

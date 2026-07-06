@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  python-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt
+      - run: pytest tests/ -q
+
+  cpp-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install numpy scipy
+      # Regenerate the cross-language DP golden reference from the current
+      # Python model, then fail if it drifted from the committed copy --
+      # this is the tripwire for "someone changed exact_dp.py/stern.py and
+      # forgot to regenerate the golden file".
+      - name: Regenerate golden reference and check for staleness
+        run: |
+          cd tests/cpp_backtest
+          make golden
+          git diff --exit-code -- tests/golden/dp_grid_golden.csv || \
+            (echo "::error::tests/cpp_backtest/tests/golden/dp_grid_golden.csv is stale -- run 'make golden' in tests/cpp_backtest/ and commit the result" && exit 1)
+      # Now run the C++ suite (including the golden parity test) against
+      # that freshly-generated, verified-current reference.
+      - name: Build and run C++ tests
+        run: |
+          cd tests/cpp_backtest
+          make test

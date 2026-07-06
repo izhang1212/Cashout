@@ -1,9 +1,9 @@
 import numpy as np
 
-from parlay_follower.game_feed.game_state import GameState, Leg, LegStatus
-from parlay_follower.probability.copula import CorrelationTable
-from parlay_follower.probability.monte_carlo import price_combo, synthetic_fair_value
-from parlay_follower.nba.stern import SternModel
+from parlay_follower.shared.copula import CorrelationTable
+from parlay_follower.shared.game_feed.game_state import GameState, Leg, LegStatus
+from parlay_follower.shared.monte_carlo import price_combo, synthetic_fair_value
+from parlay_follower.shared.stern import SternModel
 
 
 def test_independent_legs_match_product():

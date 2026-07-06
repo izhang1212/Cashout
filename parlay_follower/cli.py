@@ -10,28 +10,29 @@ from __future__ import annotations
 
 import argparse
 import glob
-from re import sub
 import sys
-from .backtest import policies as pol
-from .backtest.metrics import summarize
-from .backtest.replay import monte_carlo_study, run_policy, synthetic_game_ticks
-from .config import load_settings
-from .decision.bid_model import BidModel
-from .decision.exact_dp import boundary_heatmap, solve
-from .decision.threshold_policy import grid_search
-from .probability.stern import SternModel
+
 import numpy as np
+
+from tests.backtest import policies as pol
+from tests.backtest.metrics import summarize
+from tests.backtest.replay import monte_carlo_study, run_policy, synthetic_game_ticks
+from tests.backtest.threshold_policy import grid_search
+
+from .cashout.bellman.exact_dp import boundary_heatmap, solve
+from .cashout.bid_model import BidModel
+from .shared.config import load_settings
+from .shared.stern import SternModel
 
 
 def cmd_recon(_args):
-    from scripts_shim import day_one_recon  # noqa: F401  (see scripts/day_one_recon.py)
     print("Run: python scripts/day_one_recon.py   (kept as a standalone script)")
 
 
 def cmd_positions(_args):
-    from .account.auth import KalshiSigner
-    from .account.kalshi_client import KalshiClient
-    from .config import base_url, load_creds, load_settings
+    from .execution.account.auth import KalshiSigner
+    from .execution.account.kalshi_client import KalshiClient
+    from .shared.config import base_url, load_creds, load_settings
 
     settings, creds = load_settings(), load_creds()
     client = KalshiClient(base_url(settings, creds.env),
@@ -94,18 +95,18 @@ def cmd_backtest(args):
     )
     print(f"\n{'policy':24s} {'mean':>8s} {'sharpe':>8s} {'bust%':>7s} {'win%':>7s}")
     for name, pnls in results.items():
-        s = summarize(pnls)
+        s = summarize(pnls, entry_prices=args.entry)
         print(f"{name:24s} {s['mean_pnl']:8.4f} {s['sharpe_like']:8.3f} "
               f"{100*s['bust_rate']:6.1f}% {100*s['win_rate']:6.1f}%")
     print("\nNOTE: synthetic games test the policy UNDER THE MODEL. "
           "The paper-trading gate tests the model against reality.")
-    
+
 def cmd_fit_bid_model(args):
     import numpy as np
     import pandas as pd
 
-    from .config import load_settings
-    from .decision.bid_model import BidModel
+    from .cashout.bid_model import BidModel
+    from .shared.config import load_settings
 
     settings = load_settings()
     files = glob.glob(f"{settings['paths']['bid_log_dir']}/*.csv")
@@ -128,11 +129,11 @@ def cmd_fit_bid_model(args):
         print("residual_std is large -> consider adding the current bid as a DP state variable.")
 def cmd_inspect(args):
     """Show a full snapshot of one combo position: size, cost, payout, cash-out, per-leg probs."""
-    from .account.auth import KalshiSigner
-    from .account.kalshi_client import KalshiClient
-    from .config import base_url, load_creds, load_settings
-    from .market_data.exit_quote import get_exit_quote
-    from .market_data.orderbook import best_bid, parse_yes_bids
+    from .execution.account.auth import KalshiSigner
+    from .execution.account.kalshi_client import KalshiClient
+    from .execution.market_data.exit_quote import get_exit_quote
+    from .execution.market_data.orderbook import best_bid, parse_yes_bids
+    from .shared.config import base_url, load_creds, load_settings
 
     settings, creds = load_settings(), load_creds()
     client = KalshiClient(base_url(settings, creds.env),
@@ -200,10 +201,10 @@ def cmd_inspect(args):
 
 
 def cmd_check_liquidity(args):
-    from .account.auth import KalshiSigner
-    from .account.kalshi_client import KalshiClient
-    from .config import base_url, load_creds, load_settings
-    from .market_data.exit_quote import liquidity_preflight
+    from .execution.account.auth import KalshiSigner
+    from .execution.account.kalshi_client import KalshiClient
+    from .execution.market_data.exit_quote import liquidity_preflight
+    from .shared.config import base_url, load_creds, load_settings
 
     settings, creds = load_settings(), load_creds()
     client = KalshiClient(base_url(settings, creds.env),
@@ -217,9 +218,9 @@ def cmd_check_liquidity(args):
         print(f"  ~${q.avg_price:.3f}/contract  total ${q.proceeds:.2f}  depth_ok={q.depth_ok}")
     if q.note:
         print(f"  note: {q.note}")
-    
+
 def _parse_legs(leg_specs: list[str]) -> list:
-    from .game_feed.game_state import Leg
+    from .shared.game_feed.game_state import Leg
     legs = []
     for j, spec in enumerate(leg_specs or []):
         market = ""
@@ -231,7 +232,7 @@ def _parse_legs(leg_specs: list[str]) -> list:
             k, v = kv.split("=")
             params[k] = float(v) if v.replace(".", "", 1).replace("-", "", 1).isdigit() else v
         # Cross-game MLB totals: rename kind so the engine falls through to prop_probs
-        # (which are computed per-game by MLBGameContext.compute_cross_game).
+        # (which are computed per-game by MLBGameContext.compute()).
         if kind in ("total_over", "total_under") and "game" in params:
             kind = "cross_" + kind
         legs.append(Leg(leg_id=f"leg{j}", kind=kind, params=params, market_ticker=market))
@@ -239,9 +240,9 @@ def _parse_legs(leg_specs: list[str]) -> list:
 
 
 def cmd_follow(args):
-    from .account.auth import KalshiSigner
-    from .account.kalshi_client import KalshiClient
-    from .config import base_url, load_creds, load_settings
+    from .execution.account.auth import KalshiSigner
+    from .execution.account.kalshi_client import KalshiClient
+    from .shared.config import base_url, load_creds, load_settings
 
     settings, creds = load_settings(), load_creds()
     client = KalshiClient(base_url(settings, creds.env),
@@ -253,8 +254,7 @@ def cmd_follow(args):
     legs = _parse_legs(args.leg)
 
     if args.sport == "mlb":
-        from .live.alerts import loud_console_alert
-        from .mlb.follower import MLBFollower
+        from .live.mlb_follower import MLBFollower
         # Start with explicitly listed game IDs, then let the follower auto-add
         # any game= params found in legs (_collect_game_pks inside MLBFollower).
         explicit_pks = [pk.strip() for pk in args.game_id.split(",") if pk.strip()]
@@ -262,28 +262,28 @@ def cmd_follow(args):
             client=client, position=positions[args.ticker], legs=legs,
             game_pks=explicit_pks,
             pregame_home_advantage_runs=float(args.spread) if args.spread else 0.15,
-            settings=settings, alert_fn=loud_console_alert,
+            settings=settings,
         ).run()
     else:
-        from .live.alerts import loud_console_alert
-        from .nba.follower import LiveFollower
+        from .live.nba_follower import LiveFollower
         LiveFollower(
             client=client, position=positions[args.ticker], legs=legs,
             game_id=args.game_id, pregame_spread=args.spread or 0.0,
-            settings=settings, alert_fn=loud_console_alert,
+            settings=settings,
         ).run()
 
 
 def cmd_historical_backtest(args):
     """Run the decision policy on real historical NBA/MLB games and compare vs benchmarks."""
-    from .backtest.historical_replay import (
+    from tests.backtest.historical_replay import (
         historical_policy_comparison, pull_nba_games, pull_mlb_games,
         nba_ticks_from_pbp, mlb_ticks_from_innings,
     )
-    from .backtest.metrics import summarize
-    from .decision.bid_model import BidModel
-    from .decision.exact_dp import solve
-    from .probability.stern import SternModel
+    from tests.backtest.metrics import summarize
+
+    from .cashout.bellman.exact_dp import solve
+    from .cashout.bid_model import BidModel
+    from .shared.stern import SternModel
 
     settings = load_settings()
     m, d = settings["model"], settings["decision"]
@@ -321,13 +321,18 @@ def cmd_historical_backtest(args):
         dp_lookup = None
 
     results = historical_policy_comparison(tick_games, dp_lookup)
+    # Entry price is each game's own tip-off model probability, not a single
+    # constant across games (unlike `lpf backtest`) -- pass the per-game array
+    # so bust_rate's "near-total loss" threshold is relative to the right
+    # stake for each game, not a fixed -0.999 dollars (see metrics.summarize).
+    entry_prices = np.array([ticks[0]["entry_price"] for ticks, _won in tick_games])
 
     print(f"{'policy':28s} {'n':>5s} {'mean P&L':>9s} {'sharpe':>8s} "
           f"{'bust%':>7s} {'win%':>7s} {'p5':>7s} {'p95':>7s}")
     print("-" * 85)
     for name, pnls in sorted(results.items(),
                               key=lambda x: -summarize(x[1])["mean_pnl"]):
-        s = summarize(pnls)
+        s = summarize(pnls, entry_prices=entry_prices)
         print(f"{name:28s} {s['n']:5d} {s['mean_pnl']:+9.4f} {s['sharpe_like']:8.3f} "
               f"{100*s['bust_rate']:6.1f}% {100*s['win_rate']:6.1f}% "
               f"{s['p5']:+7.3f} {s['p95']:+7.3f}")
@@ -378,7 +383,7 @@ def main():
     cl = sub.add_parser("check-liquidity")
     cl.add_argument("--ticker", required=True, help="position ticker to probe")
     cl.set_defaults(fn=cmd_check_liquidity)
-    
+
     fl = sub.add_parser("follow")
     fl.add_argument("--ticker", required=True, help="combo ticker from `lpf positions`")
     fl.add_argument("--game-id", required=True,

@@ -1,5 +1,5 @@
-from parlay_follower.game_feed.game_state import (GameState, Leg, LegStatus,
-                                                  resolve_leg, update_all)
+from parlay_follower.shared.game_feed.game_state import (GameState, Leg, LegStatus,
+                                                          resolve_leg, update_all)
 
 
 def test_total_over_clinches_early():

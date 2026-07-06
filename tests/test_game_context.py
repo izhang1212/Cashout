@@ -6,14 +6,14 @@ False in CI) and all lookups fall back to sensible defaults.
 import numpy as np
 import pytest
 
-from parlay_follower.game_feed.game_state import GameState, Leg, LegStatus
-from parlay_follower.nba.stats import NBAStatsCache, PlayerSeasonStats, TeamSeasonStats
-from parlay_follower.nba.foul_model import FoulTroubleModel, foul_minutes_at_risk
-from parlay_follower.nba.game_context import GameContext
-from parlay_follower.nba.momentum import MomentumDetector
-from parlay_follower.nba.player_model import (
+from parlay_follower.data_gathering.nba.stats import NBAStatsCache, PlayerSeasonStats, TeamSeasonStats
+from parlay_follower.models.nba.foul_model import FoulTroubleModel, foul_minutes_at_risk
+from parlay_follower.models.nba.game_context import GameContext
+from parlay_follower.models.nba.momentum import MomentumDetector
+from parlay_follower.models.nba.player_model import (
     player_pts_over_prob, projected_minutes_remaining)
-from parlay_follower.nba.stern import SternModel
+from parlay_follower.shared.game_feed.game_state import GameState, Leg, LegStatus
+from parlay_follower.shared.stern import SternModel
 
 
 # ---- helpers ----

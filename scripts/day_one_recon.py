@@ -13,8 +13,8 @@ Procedure (run after buying a small NBA combo in demo or production):
   5. If (4) fails, attempt an RFQ   -> Plan B confirmed?
 
 Paste the JSON outputs into docs/data_contract.md and update every `RECON:`
-comment in src/parlay_follower/account/kalshi_client.py and
-src/parlay_follower/market_data/orderbook.py.
+comment in parlay_follower/execution/account/kalshi_client.py and
+parlay_follower/execution/market_data/orderbook.py.
 """
 import json
 import sys
@@ -22,9 +22,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from parlay_follower.account.auth import KalshiSigner          # noqa: E402
-from parlay_follower.account.kalshi_client import KalshiClient  # noqa: E402
-from parlay_follower.config import base_url, load_creds, load_settings  # noqa: E402
+from parlay_follower.execution.account.auth import KalshiSigner          # noqa: E402
+from parlay_follower.execution.account.kalshi_client import KalshiClient  # noqa: E402
+from parlay_follower.shared.config import base_url, load_creds, load_settings  # noqa: E402
 
 
 def dump(label, obj):
