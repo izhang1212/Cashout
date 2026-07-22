@@ -1,12 +1,12 @@
 # Live Parlay Follower
-Real-time optimal cash-out timing for Kalshi sports combos (NBA and MLB) via exact dynamic programming.
+Real-time optimal cash-out timing for Kalshi NBA combos via exact dynamic programming.
 
 ## What it does
 
 Given a multi-leg position ("combo") held on Kalshi, this system:
 
 1. **Auto-discovers** the position — contracts, cost basis, leg structure, and current exit price — directly from the Kalshi API. No manual entry.
-2. **Follows the live game** tick-by-tick from tip-off to final buzzer (NBA) or first pitch to last out (MLB), tracking each leg's status in real time.
+2. **Follows the live game** tick-by-tick from tip-off to final buzzer, tracking each leg's status in real time.
 3. **Re-prices the position** at each tick: calibrated per-leg win probabilities, joint combo fair value, the live executable exit bid, and the expected value of continuing to hold.
 4. **Emits a SELL signal** the instant the market bid crosses the precomputed, provably optimal exercise boundary — with a one-line explanation and live P&L.
 
@@ -24,19 +24,16 @@ Because the game state is low-dimensional and discrete, this stopping problem ca
 |---|---|---|
 | **Kalshi REST API** (authenticated, RSA-PSS signed) | Open positions, contracts, cost basis, combo leg tickers, live order-book bids and depth, RFQ exit quotes | Position discovery, live exit pricing, haircut model calibration |
 | **NBA Stats API** (`nba_api`, free) | Live box scores, play-by-play, player minutes/stats/fouls, team pace and ratings | Live game state, per-leg win probabilities, foul trouble and momentum adjustments |
-| **MLB Stats API** (`mlb-statsapi`, free) | Live linescore (inning, outs, runners on base, score), play-by-play, player batting/pitching stats | Live MLB game state, win expectancy, player prop projections |
 
 ## Methods and models
 
 ### Win probability
 
-**NBA — Stern (1994) Brownian motion model.** Score differential is modeled as Brownian motion with drift calibrated to the pregame spread: `D(t) ~ BM(μ, σ)`. Win probability is a closed-form normal CDF in (lead, time remaining). Supplies closed-form transition probabilities for the DP grid and is augmented by:
+**Stern (1994) Brownian motion model.** Score differential is modeled as Brownian motion with drift calibrated to the pregame spread: `D(t) ~ BM(μ, σ)`. Win probability is a closed-form normal CDF in (lead, time remaining). Supplies closed-form transition probabilities for the DP grid and is augmented by:
 - **Foul trouble weighting** — player importance (usage × minutes share) scales the win-probability impact of star players sitting with fouls.
 - **Scoring run detection** — a rolling 2.5-minute window flags momentum runs ≥ 7 net points and nudges the model toward mean reversion, triggering SELL at the temporary market-price peak. **This mean-reversion bet is not yet empirically validated** — hot-hand/run-persistence is a genuinely contested question, and the 6pp max nudge is a hand-tuned prior, not a fitted parameter. `tests/backtest/momentum_validation.py` + `scripts/validate_momentum.py` measure whether runs actually revert on real historical games (requires network access to pull them); until that check is run, treat the nudge as unproven.
 - **Pace-aware totals** — Bayesian blend of current-game scoring rate with team season pace; Q4 adjustments for clock management (close games) and intentional fouling (blowouts).
 - **Live drift update** — each tick back-solves an implied drift `μ` from the Kalshi moneyline market price and blends it with the pregame estimate (capped at 50% live weight), forcing a boundary rebuild when the shift is material. **This is partially circular by design**: `μ` is solved from the same market price that `exit_price` comes from, so blending toward it pulls the DP's continuation value toward the market's own price — narrowing the model-vs-market disagreement that SELL edge is made of. The 50% cap exists specifically so genuine disagreement survives rather than being fully absorbed; see the comment at `_MU_LIVE_MAX_WEIGHT` in `parlay_follower/live/nba_follower.py` and its regression test in `tests/live/test_live_mu_blend.py`.
-
-**MLB — run-expectancy Markov chain simulation.** Baseball's state space (inning, half, outs, runners on base, score) doesn't reduce to a 1-D Brownian motion, so `MLBWinModel` estimates P(home wins) by Monte Carlo simulation of remaining half-innings: per-half-inning runs are drawn from a Poisson blended from the batting team's season rate and the pitching team's ERA-implied rate, corrected by the standard 24-state run-expectancy matrix (Tango/Lichtman/Dolphin) for the current outs/runners state. Totals use the same pace blend as NBA (current-game rate → season rate as the blend weight shifts with innings played), with overdispersion-corrected variance (empirical var/mean ≈ 2.0, real innings are burstier than Poisson). Player props (batter hits/HR/RBI/total bases over, pitcher strikeouts over) blend a per-at-bat/per-inning game rate with a season baseline the same way. The MLB follower auto-detects same-game combos, cross-game combos (independent legs across simultaneously-polled games, copula ρ ≈ 0.05), and mixed combos from each leg's `game=` param, and always uses the LSMC path (`use_exact_dp=False`) since MLB leg probabilities come from the sport-specific game context rather than the NBA engine's internal Brownian approximations.
 
 ### Joint modeling (correlation)
 
@@ -104,7 +101,7 @@ The project has two independent components that share the same mathematical mode
 - 65 unit tests (`CHECK()` assertions), no external framework.
 - Used for offline strategy validation and parameter calibration.
 
-**Python live engine** (`parlay_follower/`) — network-bound orchestration of a single real game, organized by pipeline stage rather than by sport (see Project layout below):
+**Python live engine** (`parlay_follower/`) — network-bound orchestration of a single real game, organized by pipeline stage (see Project layout below):
 - Watches one live game tick-by-tick with **adaptive polling**: 1 s in the final 3 game-minutes (crunch time), 2 s otherwise.
 - Runs its own DP/LSMC in Python — correct choice because the live session is I/O-bound, the DP solve takes ~1 ms in NumPy, and the Python DP has session-specific behaviour the offline C++ solver doesn't need: it rebuilds every 5 game-minutes as legs resolve and as live Kalshi moneyline prices update the drift estimate `μ`.
 - Fires HOLD/SELL alerts; the human executes on Kalshi.
@@ -133,35 +130,34 @@ With the current placeholder bid-model parameters, the DP correctly identifies n
 ## Project layout
 
 The package is organized by pipeline stage (pull data → predict probabilities
-→ decide when to cash out → validate), not by sport — each sport-specific
-folder holds the same kind of thing as its sibling, one level up from where a
-sport-first layout would put it.
+→ decide when to cash out → validate):
 
 ```
 live-parlay-follower/
 ├── parlay_follower/
 │   ├── cli.py                  # lpf command-line entry point
 │   ├── data_gathering/         # Pulls/holds live + historical game state
-│   │   ├── nba/                #   feed.py (live poll), stats.py (season cache)
-│   │   └── mlb/                #   feed.py, stats.py, game_state.py (cross-game routing)
+│   │   └── nba/                #   feed.py (live poll), stats.py (season cache),
+│   │                            #   game_state.py (GameState, Leg/LegStatus, leg resolvers)
 │   ├── models/                 # Turns game state into win/prop probabilities
-│   │   ├── nba/                #   foul trouble, momentum, player props, context aggregator
-│   │   └── mlb/                #   run-expectancy win model, player props, context aggregator
+│   │   └── nba/                #   stern.py (Stern (1994) Brownian-motion win-prob model),
+│   │                            #   foul trouble, momentum, player props, context aggregator
 │   ├── cashout/                # "When should I sell" -- the optimal-stopping layer
 │   │   ├── engine.py           #   DecisionEngine: dispatches to bellman/ or lsm/
-│   │   ├── bid_model.py        #   market-maker haircut model (shared by both)
+│   │   ├── bid_model.py        #   market-maker haircut model (used by both bellman/ and lsm/)
+│   │   ├── pricing/            #   combo fair-value/joint-probability math, independent of
+│   │   │                       #   which optimizer decides when to sell:
+│   │   │                       #   copula.py (Gaussian copula for joint leg resolution),
+│   │   │                       #   monte_carlo.py (price_combo, leg_live_prob)
 │   │   ├── bellman/            #   exact_dp.py (Bellman backward induction), robust.py (ensemble)
 │   │   └── lsm/                #   basis.py (basis functions), lsm.py (Longstaff-Schwartz boundary)
-│   ├── shared/                 # Cross-sport infrastructure
-│   │   ├── config.py           #   settings.yaml + .env loading
-│   │   ├── stern.py            #   Stern (1994) Brownian-motion model (NBA's win-prob engine)
-│   │   ├── copula.py, shrinkage.py, monte_carlo.py
-│   │   └── game_feed/          #   GameState, Leg/LegStatus, leg resolvers
-│   ├── execution/              # Talking to the exchange
+│   ├── execution/               # Talking to the exchange
+│   │   ├── config.py           #   settings.yaml + .env (Kalshi credentials) loading
 │   │   ├── account/            #   Kalshi auth (RSA-PSS) and REST client
 │   │   └── market_data/        #   order-book pricing, RFQ, exit quote dispatch, bid logger
-│   └── live/                   # Live orchestration loops (the composition root)
-│       ├── nba_follower.py, mlb_follower.py
+│   └── live/                   # Live orchestration loop (the composition root)
+│       ├── nba_follower.py
+│       ├── shrinkage.py        #   shrink model probs toward market-implied (EdgeLedger)
 │       └── signal.py           #   HOLD/SELL alert formatting
 ├── config/settings.yaml        # Model, decision, and bid-model parameters
 ├── scripts/                    # Bid logger, day-one API recon, calibration, momentum-claim validation
@@ -212,16 +208,9 @@ lpf positions             # discover your combo ticker and cost basis
 lpf inspect --ticker KXNBACOMBO-...   # show exit value, leg probs, P&L
 
 # Follow a live NBA game
-lpf follow --sport nba --ticker KXNBACOMBO-... --game-id 0042500404 --spread -4.5 \
+lpf follow --ticker KXNBACOMBO-... --game-id 0042500404 --spread -4.5 \
     --leg "moneyline:side=home@KXNBA-...-ML" \
     --leg "total_over:line=224.5@KXNBA-...-TOTAL"
-
-# Follow MLB cross-game totals (typical use: total runs over in 3-4 separate games)
-lpf follow --sport mlb --ticker KXMLBCOMBO-... \
-    --game-id 745528,745529,745530 \
-    --leg "total_over:line=8.5,game=745528@KXMLB-...-G1TOTAL" \
-    --leg "total_over:line=7.5,game=745529@KXMLB-...-G2TOTAL" \
-    --leg "total_over:line=9.0,game=745530@KXMLB-...-G3TOTAL"
 ```
 
 ## References

@@ -34,7 +34,7 @@ from __future__ import annotations
 from collections import deque
 from dataclasses import dataclass
 
-from ...shared.game_feed.game_state import GameState
+from ...data_gathering.nba.game_state import GameState
 
 
 @dataclass

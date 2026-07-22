@@ -1,4 +1,4 @@
-from parlay_follower.shared.game_feed.game_state import (GameState, Leg, LegStatus,
+from parlay_follower.data_gathering.nba.game_state import (GameState, Leg, LegStatus,
                                                           resolve_leg, update_all)
 
 

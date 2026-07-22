@@ -51,11 +51,11 @@ from ..execution.account.kalshi_client import KalshiClient, Position
 from ..execution.market_data.bid_logger import BidLogger
 from ..execution.market_data.exit_quote import get_exit_quote, liquidity_preflight
 from ..execution.market_data.orderbook import best_bid, parse_yes_bids
-from ..shared.copula import CorrelationTable
-from ..shared.game_feed.game_state import Leg, LegStatus, update_all
-from ..shared.monte_carlo import synthetic_fair_value
-from ..shared.shrinkage import shrink
-from ..shared.stern import SternModel
+from ..cashout.pricing.copula import CorrelationTable
+from ..cashout.pricing.monte_carlo import synthetic_fair_value
+from ..data_gathering.nba.game_state import Leg, LegStatus, update_all
+from ..models.nba.stern import SternModel
+from .shrinkage import shrink
 from .signal import Signal
 
 # Market-prob order-book results are cached for this many seconds to avoid

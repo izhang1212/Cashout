@@ -2,7 +2,7 @@ import numpy as np
 
 from parlay_follower.cashout.bellman.exact_dp import solve
 from parlay_follower.cashout.bid_model import BidModel, HaircutParams
-from parlay_follower.shared.stern import SternModel
+from parlay_follower.models.nba.stern import SternModel
 
 
 def _solve(haircut_a=0.03, haircut_b=0.25, risk_aversion=0.0, q=0.7):

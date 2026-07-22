@@ -36,7 +36,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from parlay_follower.models.nba.momentum import MomentumDetector
-from parlay_follower.shared.game_feed.game_state import GameState
+from parlay_follower.data_gathering.nba.game_state import GameState
 
 
 @dataclass

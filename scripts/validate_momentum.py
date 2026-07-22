@@ -20,7 +20,7 @@ import sys
 
 sys.path.insert(0, ".")
 
-from parlay_follower.shared.game_feed.game_state import GameState  # noqa: E402
+from parlay_follower.data_gathering.nba.game_state import GameState  # noqa: E402
 from tests.backtest.historical_replay import _parse_clock, pull_nba_games  # noqa: E402
 from tests.backtest.momentum_validation import (  # noqa: E402
     measure_run_reversion, summarize_reversion)

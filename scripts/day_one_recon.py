@@ -24,7 +24,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from parlay_follower.execution.account.auth import KalshiSigner          # noqa: E402
 from parlay_follower.execution.account.kalshi_client import KalshiClient  # noqa: E402
-from parlay_follower.shared.config import base_url, load_creds, load_settings  # noqa: E402
+from parlay_follower.execution.config import base_url, load_creds, load_settings  # noqa: E402
 
 
 def dump(label, obj):

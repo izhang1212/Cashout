@@ -37,7 +37,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from ...shared.copula import make_corr_matrix, nearest_psd
+from ..pricing.copula import make_corr_matrix, nearest_psd
 from ..bid_model import BidModel
 from .basis import basis
 

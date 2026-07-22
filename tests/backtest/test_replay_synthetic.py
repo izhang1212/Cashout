@@ -14,7 +14,7 @@ from __future__ import annotations
 import numpy as np
 
 from parlay_follower.cashout.bid_model import BidModel
-from parlay_follower.shared.stern import SternModel
+from parlay_follower.models.nba.stern import SternModel
 
 from .replay import synthetic_game_ticks
 

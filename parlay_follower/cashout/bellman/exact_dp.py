@@ -26,7 +26,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from ...shared.stern import SternModel
+from ...models.nba.stern import SternModel
 from ..bid_model import BidModel
 
 

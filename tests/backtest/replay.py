@@ -15,7 +15,7 @@ from collections.abc import Callable, Iterable
 import numpy as np
 
 from parlay_follower.cashout.bid_model import BidModel
-from parlay_follower.shared.stern import SternModel
+from parlay_follower.models.nba.stern import SternModel
 
 Policy = Callable[[dict], bool]   # tick -> sell?
 

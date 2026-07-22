@@ -6,9 +6,9 @@ from parlay_follower.cashout.lsm.lsm import build_nleg_boundary
 from parlay_follower.execution.account.kalshi_client import Position
 from parlay_follower.execution.market_data.exit_quote import (ExitSource, get_exit_quote,
                                                     liquidity_preflight)
-from parlay_follower.shared.copula import CorrelationTable
-from parlay_follower.shared.game_feed.game_state import GameState, Leg, LegStatus
-from parlay_follower.shared.stern import SternModel
+from parlay_follower.cashout.pricing.copula import CorrelationTable
+from parlay_follower.data_gathering.nba.game_state import GameState, Leg, LegStatus
+from parlay_follower.models.nba.stern import SternModel
 
 
 # ---- fake client to exercise exit-quote dispatch without the network ----

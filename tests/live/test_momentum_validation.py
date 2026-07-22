@@ -9,7 +9,7 @@ the harness is trustworthy once pointed at real data.
 """
 from __future__ import annotations
 
-from parlay_follower.shared.game_feed.game_state import GameState
+from parlay_follower.data_gathering.nba.game_state import GameState
 
 from ..backtest.momentum_validation import (
     RunReversionResult, measure_run_reversion, summarize_reversion)

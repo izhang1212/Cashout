@@ -30,10 +30,10 @@ from dataclasses import dataclass
 import numpy as np
 from scipy.stats import norm as _norm
 
-from ..shared.copula import CorrelationTable
-from ..shared.game_feed.game_state import GameState, Leg, LegStatus
-from ..shared.monte_carlo import leg_live_prob, price_combo
-from ..shared.stern import SternModel
+from ..data_gathering.nba.game_state import GameState, Leg, LegStatus
+from ..models.nba.stern import SternModel
+from .pricing.copula import CorrelationTable
+from .pricing.monte_carlo import leg_live_prob, price_combo
 
 from .bellman.exact_dp import DPResult, solve
 from .bellman.robust import make_ensemble, robust_lookup, robust_solve
@@ -105,17 +105,7 @@ class DecisionEngine:
         """Return a closure (score_diff, tau_min) -> P(leg hits | simulated state).
 
         NOTE: tau passed to these closures is in MINUTES.
-
-        When use_exact_dp=False (MLB), all leg probabilities come from the
-        sport-specific game context via prop_probs — it handles same-game,
-        cross-game, and mixed combos correctly. The engine's internal Brownian
-        motion approximations for moneyline/total are only used for NBA (exact_dp=True).
         """
-        # MLB: always trust the external game-context probability.
-        if not self.use_exact_dp and prop_probs and leg.leg_id in prop_probs:
-            p = float(prop_probs[leg.leg_id])
-            return lambda d, tau, p=p: p
-
         stern = self.stern
 
         if leg.kind == "moneyline":

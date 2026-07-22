@@ -13,7 +13,7 @@ from __future__ import annotations
 import time
 from collections.abc import Callable, Iterator
 
-from ...shared.game_feed.game_state import REGULATION_SEC, GameState
+from .game_state import REGULATION_SEC, GameState
 
 try:
     from nba_api.live.nba.endpoints import boxscore as _boxscore

@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from ...shared.stern import SternModel
+from ...models.nba.stern import SternModel
 from ..bid_model import BidModel
 from .exact_dp import DPResult, solve
 

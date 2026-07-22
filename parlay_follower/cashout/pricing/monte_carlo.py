@@ -13,8 +13,8 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from ...data_gathering.nba.game_state import GameState, Leg, LegStatus
 from .copula import CorrelationTable, joint_hit_samples, make_corr_matrix, nearest_psd
-from .game_feed.game_state import GameState, Leg, LegStatus
 
 
 @dataclass

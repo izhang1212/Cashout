@@ -23,7 +23,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "..", "..
 
 from parlay_follower.cashout.bellman.exact_dp import solve  # noqa: E402
 from parlay_follower.cashout.bid_model import BidModel  # noqa: E402
-from parlay_follower.shared.stern import SternModel  # noqa: E402
+from parlay_follower.models.nba.stern import SternModel  # noqa: E402
 
 # ── Canonical parameters (must match test_main.cpp / bench_main.cpp) ─────────
 SIGMA          = 2.2845

@@ -19,8 +19,8 @@ from parlay_follower.execution.account.auth import KalshiSigner         # noqa: 
 from parlay_follower.execution.account.kalshi_client import KalshiClient  # noqa: E402
 from parlay_follower.execution.market_data.bid_logger import BidLogger  # noqa: E402
 from parlay_follower.execution.market_data.orderbook import best_bid, parse_yes_bids  # noqa: E402
-from parlay_follower.shared.config import base_url, load_creds, load_settings  # noqa: E402
-from parlay_follower.shared.monte_carlo import synthetic_fair_value     # noqa: E402
+from parlay_follower.execution.config import base_url, load_creds, load_settings  # noqa: E402
+from parlay_follower.cashout.pricing.monte_carlo import synthetic_fair_value     # noqa: E402
 
 
 def main():

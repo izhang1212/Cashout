@@ -12,8 +12,8 @@ from parlay_follower.models.nba.game_context import GameContext
 from parlay_follower.models.nba.momentum import MomentumDetector
 from parlay_follower.models.nba.player_model import (
     player_pts_over_prob, projected_minutes_remaining)
-from parlay_follower.shared.game_feed.game_state import GameState, Leg, LegStatus
-from parlay_follower.shared.stern import SternModel
+from parlay_follower.data_gathering.nba.game_state import GameState, Leg, LegStatus
+from parlay_follower.models.nba.stern import SternModel
 
 
 # ---- helpers ----

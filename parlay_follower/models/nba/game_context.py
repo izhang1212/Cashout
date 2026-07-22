@@ -27,8 +27,8 @@ import numpy as np
 from scipy.stats import norm
 
 from ...data_gathering.nba.stats import NBAStatsCache
-from ...shared.game_feed.game_state import GameState, Leg, LegStatus
-from ...shared.stern import SternModel
+from ...data_gathering.nba.game_state import GameState, Leg, LegStatus
+from .stern import SternModel
 from .foul_model import FoulTroubleImpact, FoulTroubleModel
 from .momentum import MomentumDetector, MomentumSignal
 from .player_model import player_pts_over_prob

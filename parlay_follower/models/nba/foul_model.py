@@ -23,7 +23,7 @@ from dataclasses import dataclass, field
 import numpy as np
 
 from ...data_gathering.nba.stats import NBAStatsCache
-from ...shared.game_feed.game_state import GameState
+from ...data_gathering.nba.game_state import GameState
 
 # A fully removed star (importance=1.0) for the entire game is worth ~7pp win prob.
 _IMPORTANCE_TO_WIN_PROB_DELTA = 0.07
