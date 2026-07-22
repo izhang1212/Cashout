@@ -38,7 +38,7 @@ from ..shared.stern import SternModel
 from .bellman.exact_dp import DPResult, solve
 from .bellman.robust import make_ensemble, robust_lookup, robust_solve
 from .bid_model import BidModel
-from .lsm.nleg_paths import NLegBoundary, build_nleg_boundary
+from .lsm.lsm import NLegBoundary, build_nleg_boundary
 
 # Rebuild the exercise boundary every N game-minutes to keep q_other and
 # pace-based totals fresh (even when no leg status changes).

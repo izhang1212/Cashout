@@ -151,7 +151,7 @@ live-parlay-follower/
 │   │   ├── engine.py           #   DecisionEngine: dispatches to bellman/ or lsm/
 │   │   ├── bid_model.py        #   market-maker haircut model (shared by both)
 │   │   ├── bellman/            #   exact_dp.py (Bellman backward induction), robust.py (ensemble)
-│   │   └── lsm/                #   lsmc.py (basis functions), nleg_paths.py (Longstaff-Schwartz boundary)
+│   │   └── lsm/                #   basis.py (basis functions), lsm.py (Longstaff-Schwartz boundary)
 │   ├── shared/                 # Cross-sport infrastructure
 │   │   ├── config.py           #   settings.yaml + .env loading
 │   │   ├── stern.py            #   Stern (1994) Brownian-motion model (NBA's win-prob engine)

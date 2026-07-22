@@ -39,7 +39,7 @@ import numpy as np
 
 from ...shared.copula import make_corr_matrix, nearest_psd
 from ..bid_model import BidModel
-from .lsmc import basis
+from .basis import basis
 
 # How many simulation steps back to look for the momentum feature.
 _MOMENTUM_LOOKBACK = 4   # ~2 minutes at 96-step / 48-min resolution

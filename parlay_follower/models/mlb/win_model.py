@@ -15,7 +15,7 @@ Key design decisions
     via the standard 24-state run expectancy matrix (Tango, Lichtman, Dolphin).
     This is an additive correction to the Poisson-drawn remaining innings.
   * simulate_paths() produces score-diff traces in the same format as SternModel,
-    allowing the shared LSMC boundary code (nleg_paths.py) to work unchanged.
+    allowing the shared LSMC boundary code (lsm.py) to work unchanged.
     tau is mapped as: 1 unit = 1 out remaining, so tau=27 means a full game left.
   * sigma property is set to match the empirical score-diff variance per out
     (~0.45), which puts it in the correct order of magnitude for the bid model.

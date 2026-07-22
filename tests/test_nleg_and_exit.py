@@ -2,7 +2,7 @@ import numpy as np
 
 from parlay_follower.cashout.bid_model import BidModel, HaircutParams
 from parlay_follower.cashout.engine import DecisionEngine
-from parlay_follower.cashout.lsm.nleg_paths import build_nleg_boundary
+from parlay_follower.cashout.lsm.lsm import build_nleg_boundary
 from parlay_follower.execution.account.kalshi_client import Position
 from parlay_follower.execution.market_data.exit_quote import (ExitSource, get_exit_quote,
                                                     liquidity_preflight)
