@@ -1,0 +1,8 @@
+# --- active now (data layer) ---
+pyyaml>=6.0          # seed_data.yaml parsing
+requests>=2.31       # real-odds benchmark (odds_api.py)
+
+# --- needed next (prediction + execution) ---
+numpy>=1.26
+scipy>=1.11          # distributions for the analytic/DP backbone
+scikit-learn>=1.4    # isotonic / Platt calibration

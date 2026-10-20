@@ -1,0 +1,57 @@
+# seed_data.yaml — REAL game: Knicks @ Celtics, 2025-05-05 (Game 1, East Semis).
+# Final: NYK 108, BOS 105 (OT). Score checkpoints are from the game recap; the
+# full quarter-by-quarter line score wasn't pulled, so intermediate rows use the
+# documented checkpoints. TIMESTAMPS ARE APPROXIMATE (estimated tip-off + pacing).
+#
+# For the MONEYLINE benchmark, only score + clock matter. Player stats and
+# reference_data below are still placeholders (they don't affect moneyline), kept
+# so the combos/offline-eval still run.
+
+game:
+  game_id: "NYK@BOS_2025-05-05"
+  home_team: "BOS"
+  away_team: "NYK"
+  date: "2025-05-05"
+
+combos:
+  - id: "lsm_test"                 # 4 legs -> exercises LSM
+    entry_price: 0.14
+    payout: 1.0
+    legs:
+      - {type: moneyline, subject: "NYK", side: yes}       # Knicks win
+      - {type: total,                 line: 205, side: yes} # total over 205
+      - {type: points,   subject: "Tatum",     line: 15, side: yes}
+      - {type: assists,  subject: "Hart",      line: 4,  side: yes}
+
+  - id: "dp_test"                  # 1 leg -> exercises DP
+    entry_price: 0.62
+    payout: 1.0
+    legs:
+      - {type: threes,   subject: "Pritchard", line: 2, side: yes}
+
+reference_data:                    # PLACEHOLDER rates (do not affect moneyline benchmark)
+  players:
+    Tatum:     {points: 0.75, rebounds: 0.24, assists: 0.13, threes: 0.09, team: "BOS"}
+    Hart:      {points: 0.30, rebounds: 0.22, assists: 0.12, threes: 0.03, team: "NYK"}
+    Pritchard: {points: 0.45, rebounds: 0.08, assists: 0.10, threes: 0.085, team: "BOS"}
+  teams:
+    NYK: {pace: 96.5, off_rtg: 117, def_rtg: 112}
+    BOS: {pace: 98.0, off_rtg: 122, def_rtg: 110}
+  minutes: {Tatum: 37, Hart: 34, Pritchard: 24}
+
+game_timeline:                     # score checkpoints (real); timestamps approximate
+  # pregame -- timestamp safely before tip so real pregame odds are captured
+  - {period: 1, clock: 720, home_score: 0,  away_score: 0,  possession: "NYK", timestamp: "2025-05-05T22:00:00Z",
+     player_stats: {Tatum: {points: 0,  assists: 0, threes: 0}, Hart: {assists: 0}, Pritchard: {threes: 0}}}
+  # early Q3: Boston up 72-52
+  - {period: 3, clock: 570, home_score: 72, away_score: 52, possession: "BOS", timestamp: "2025-05-06T00:55:00Z",
+     player_stats: {Tatum: {points: 18, assists: 3, threes: 3}, Hart: {assists: 3}, Pritchard: {threes: 2}}}
+  # end Q3: Boston up 84-75
+  - {period: 3, clock: 0,   home_score: 84, away_score: 75, possession: "NYK", timestamp: "2025-05-06T01:20:00Z",
+     player_stats: {Tatum: {points: 21, assists: 4, threes: 3}, Hart: {assists: 4}, Pritchard: {threes: 2}}}
+  # mid-Q4: tied 86-86, ~8:00 left
+  - {period: 4, clock: 480, home_score: 86, away_score: 86, possession: "NYK", timestamp: "2025-05-06T01:45:00Z",
+     player_stats: {Tatum: {points: 23, assists: 5, threes: 4}, Hart: {assists: 5}, Pritchard: {threes: 2}}}
+  # final (OT): NYK 108, BOS 105
+  - {period: 5, clock: 0,   home_score: 105, away_score: 108, possession: null, timestamp: "2025-05-06T02:30:00Z",
+     player_stats: {Tatum: {points: 23, assists: 6, threes: 4}, Hart: {assists: 5}, Pritchard: {threes: 3}}}

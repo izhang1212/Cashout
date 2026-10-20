@@ -1,0 +1,15 @@
+data.txt
+
+Overview: 
+- First phase of this project; loads data that we will need to execute our policy
+
+Data:
+- Combo: Loads our combo with legs
+- Kalshi odds: Loads Kalshi bid stream which we execute our policy against
+- Live odds: Loads live odds (we can either use them into our execution policy, or benchmark our own model against it)
+
+Flow:
+1. loader.load_seed() reads the YAML into a Seed 
+2. artifical_odds.generate_kalshi_series(combo, seed.timeline, seed.reference_data) produces
+   the bid stream that the exit policy will trade against, with kalshi_fee supplying the friction
+3. odds_api.try_benchmark_odds(...) optionally pulls real odds to grade prediction
